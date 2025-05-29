@@ -1,0 +1,6 @@
+SUBIR DEPLOY/
+  main.py
+  login_app.py
+  firebase_config.py
+  requirements.txt    👈🏽 aquí
+  /pages
