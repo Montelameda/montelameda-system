@@ -1,11 +1,9 @@
-
+import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# Inicializar Firebase solo si no está inicializado
 if not firebase_admin._apps:
-    cred = credentials.Certificate("montelamedaapp-firebase-adminsdk-fbsvc-9cb2f58a51.json")
+    cred_dict = st.secrets["firebase"]
+    cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
-
-# Cliente Firestore global
 db = firestore.client()
