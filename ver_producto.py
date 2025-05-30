@@ -36,21 +36,25 @@ ETIQUETAS:
         urls += [u.strip() for u in str(producto["imagenes_secundarias_url"]).split(",") if u.strip()]
     
     zip_buffer = BytesIO()
+    errores = []
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
         zip_file.writestr("info.txt", texto_info)
         for idx, url in enumerate(urls):
             try:
-                r = requests.get(url)
+                r = requests.get(url, timeout=10)
+                r.raise_for_status()
                 img = Image.open(BytesIO(r.content))
                 ext = img.format.lower() if img.format else "jpg"
                 zip_file.writestr(f"imagen_{idx+1}.{ext}", r.content)
             except Exception as e:
-                print(f"Error descargando imagen {url}: {e}")
+                errores.append(f"Error con {url}: {e}")
 
-    return zip_buffer.getvalue(), titulo
+    return zip_buffer.getvalue(), titulo, errores
 
 with colbtn3:
-    zip_data, nombre_zip = exportar_producto(producto)
+    zip_data, nombre_zip, errores = exportar_producto(producto)
+    if errores:
+        st.warning("Algunas imágenes no se pudieron descargar:\n\n" + "\n".join(errores))
     st.download_button(
         label="⬇️ Exportar ZIP",
         data=zip_data,
