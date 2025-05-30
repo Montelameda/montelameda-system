@@ -1,10 +1,119 @@
+import streamlit as st
+import sys
+import os
+
+from login_app import login, esta_autenticado, obtener_rol
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "modulos"))
+import firebase_config
+
 import requests
 from PIL import Image
 from io import BytesIO
 import zipfile
 
-colbtn1, colbtn2, colbtn3 = st.columns([1,1,1], gap="medium")
+# --- Autenticación ---
+if not esta_autenticado():
+    login()
+    st.stop()
 
+rol = obtener_rol()
+
+st.set_page_config(page_title="Detalle del Producto", layout="centered")
+
+producto_id = st.session_state.get("producto_actual")
+if not producto_id:
+    st.error("❌ No se proporcionó un ID de producto válido.")
+    st.stop()
+
+if "last_producto_id" not in st.session_state or st.session_state.last_producto_id != producto_id:
+    st.session_state.img_selected = 0
+    st.session_state.last_producto_id = producto_id
+
+db = firebase_config.db
+doc_ref = db.collection("productos").document(producto_id)
+doc = doc_ref.get()
+if not doc.exists:
+    st.error("⚠️ El producto no fue encontrado en la base de datos.")
+    st.stop()
+producto = doc.to_dict()
+
+def tiene_valor(x):
+    if x is None:
+        return False
+    if isinstance(x, (list, dict)):
+        return len(x) > 0
+    return str(x).strip() != ""
+
+# ---- ESTILOS LIMPIOS Y GALERÍA SCROLL + VISUALES BLOQUES ----
+st.markdown("""
+    <style>
+    .product-title {font-size:2.2rem;font-weight:900;text-align:center;color:#205ec5;margin:10px 0 2px 0;letter-spacing:-1px;}
+    .tag-id {display:inline-block;background:#f2f6fa;color:#2062d8;font-weight:600;font-size:1rem;padding:4px 18px;border-radius:8px;margin:0 0 15px 0;}
+    .cat-marca-bar {display:flex;gap:12px;justify-content:center;margin:0 0 13px 0;flex-wrap:wrap;}
+    .cat-marca-item {background:#eef3ff;color:#205ec5;padding:4px 13px;font-size:0.97rem;font-weight:700;border-radius:7px;}
+    .img-slider-scroll {display:flex;overflow-x:auto;gap:18px;justify-content:flex-start;margin-bottom:18px;padding-bottom:8px;}
+    .img-slider-scroll img {max-height:210px;min-height:150px;min-width:150px;max-width:210px;border-radius:14px;border:2.2px solid #dbe8fa;background:#fff;object-fit:contain;box-shadow:0 2px 12px #205ec533;}
+    .section-card {background:#fff;border-radius:16px;padding:26px 18px 13px 18px;box-shadow:0 2px 18px rgba(60,60,60,0.09);}
+    .descripcion-ficha {font-size:1.13rem;color:#26304a;font-weight:500;margin-bottom:13px;margin-top:6px;}
+    .ficha-tecnica-label {color:#205ec5;font-size:1.1rem;font-weight:800;margin:17px 0 7px 0;}
+    .ficha-tecnica-block {font-size:1.07rem;color:#15316b;background:#f8fafd;border-radius:8px;padding:14px 16px;margin-bottom:13px;white-space:pre-line;}
+    .field-label {font-weight:700;font-size:1.01rem;margin-bottom:3px;color:#205ec5;}
+    .ficha-texto {font-size:1.04rem;color:#3d4062;margin-bottom:6px;}
+    .ml-titulo {
+        font-size:1.13rem;
+        color:#fff;
+        font-weight:800;
+        margin:18px 0 7px 0;
+        display:flex;
+        align-items:center;
+        gap:7px;
+        background:linear-gradient(90deg,#ffe600 80%,#ffdf48 100%);
+        border-radius:8px;
+        padding:6px 17px;
+        box-shadow:0 1px 7px #ffe6007c;
+        border:2px solid #ffdf48;
+        width:max-content;
+        text-shadow:0 1px 2px #b7b7001a;
+    }
+    .ml-titulo .ml-ico {font-size:1.23rem;}
+    .ml30-titulo {
+        font-size:1.11rem;
+        color:#363636;
+        font-weight:700;
+        margin:18px 0 7px 0;
+        display:flex;
+        align-items:center;
+        gap:7px;
+        background:linear-gradient(90deg,#ffe60030 60%,#ffdf4860 100%);
+        border-radius:8px;
+        padding:6px 17px;
+        box-shadow:0 1px 4px #ffe6001a;
+        border:2px solid #ffe60099;
+        width:max-content;
+    }
+    .redes-titulo {
+        font-size:1.13rem;
+        color:#fff;
+        font-weight:800;
+        margin:18px 0 7px 0;
+        display:flex;
+        align-items:center;
+        gap:7px;
+        background:linear-gradient(90deg,#2062d8 70%,#1545a7 100%);
+        border-radius:8px;
+        padding:6px 17px;
+        box-shadow:0 1px 7px #2062d84d;
+        border:2px solid #1e3fa3;
+        width:max-content;
+    }
+    .redes-titulo .red-ico {font-size:1.18rem;}
+    .stTabs [data-baseweb="tab-list"] {justify-content:center;}
+    </style>
+""", unsafe_allow_html=True)
+
+# ---- BOTONES ARRIBA ----
+colbtn1, colbtn2, colbtn3 = st.columns([1,1,1], gap="medium")
 with colbtn1:
     if st.button("⬅️ Volver al catálogo"):
         st.session_state["go_to"] = "catalogo"
