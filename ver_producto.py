@@ -3,8 +3,8 @@ from PIL import Image
 from io import BytesIO
 import zipfile
 
-# ---- BOTONES ARRIBA ----
 colbtn1, colbtn2, colbtn3 = st.columns([1,1,1], gap="medium")
+
 with colbtn1:
     if st.button("⬅️ Volver al catálogo"):
         st.session_state["go_to"] = "catalogo"
@@ -15,13 +15,11 @@ with colbtn2:
         st.switch_page("pages/editar_producto.py")
 
 def exportar_producto(producto):
-    # Tomar nombre y limpiar para archivo
     titulo = producto.get("nombre_producto", "Sin_titulo")
     precio_fb = producto.get("precio_facebook", "Sin_precio")
     descripcion = producto.get("descripcion", "Sin_descripcion")
     etiquetas = producto.get("etiquetas", "Sin_etiquetas")
     
-    # Texto info.txt
     texto_info = f"""TÍTULO: {titulo}
 PRECIO FACEBOOK: {precio_fb}
 DESCRIPCIÓN:
@@ -31,14 +29,12 @@ ETIQUETAS:
 {etiquetas}
 """
 
-    # Tomar URLs de imagen
     urls = []
     if producto.get("imagen_principal_url"):
         urls.append(producto["imagen_principal_url"])
     if producto.get("imagenes_secundarias_url"):
         urls += [u.strip() for u in str(producto["imagenes_secundarias_url"]).split(",") if u.strip()]
     
-    # ZIP en memoria
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
         zip_file.writestr("info.txt", texto_info)
