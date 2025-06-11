@@ -14,7 +14,6 @@ if not esta_autenticado():
     st.stop()
 rol_usuario = obtener_rol()  # "admin" o "vendedor"
 
-# Configuración de la página
 st.set_page_config(page_title="MonteLameda System", layout="wide")
 
 # --- CSS Global ---
@@ -62,7 +61,6 @@ st.markdown("""
     <link rel="icon" href="https://res.cloudinary.com/dkl4xbslu/image/upload/v1747363106/ChatGPT_Image_15_may_2025_22_37_31-Photoroom_yw4hqn.png" type="image/png" sizes="32x32">
 """, unsafe_allow_html=True)
 
-# --- Funciones para el banner ---
 def obtener_banner_vendedor():
     doc = firebase_config.db.collection("config").document("banner_vendedor").get()
     return doc.to_dict().get("texto", "") if doc.exists else ""
@@ -70,7 +68,6 @@ def obtener_banner_vendedor():
 def actualizar_banner_vendedor(nuevo_texto):
     firebase_config.db.collection("config").document("banner_vendedor").set({"texto": nuevo_texto})
 
-# --- Banner editable para admin ---
 if rol_usuario == "admin":
     with st.expander("Editar banner de vendedores (opcional)", expanded=False):
         texto_actual = obtener_banner_vendedor()
@@ -79,13 +76,11 @@ if rol_usuario == "admin":
             actualizar_banner_vendedor(nuevo_texto)
             st.success("Banner actualizado.")
 
-# --- Banner visible para vendedores ---
 if rol_usuario == "vendedor":
     banner_texto = obtener_banner_vendedor()
     if banner_texto.strip():
         st.info(banner_texto)
 
-# --- CSS para tarjetas ---
 st.markdown("""
     <style>
     .product-card-pro {
@@ -119,37 +114,30 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Parámetros de paginación ---
 PRODUCTOS_POR_PAGINA = 20
 if "pagina_actual" not in st.session_state:
     st.session_state["pagina_actual"] = 0
 
 pagina = st.session_state["pagina_actual"]
 
-# --- Inicializar selección ---
 if "productos_seleccionados" not in st.session_state:
     st.session_state["productos_seleccionados"] = []
 
-# --- Carga de productos ---
 todos_productos = [doc.to_dict() | {"doc_id": doc.id} for doc in firebase_config.db.collection("productos").stream()]
 
-# --- Barra de búsqueda y orden ---
 busq_col, orden_col = st.columns([3.5, 2])
 with busq_col:
     texto_busqueda = st.text_input("🔍 Buscar producto...", key="busqueda_nombre")
 with orden_col:
     orden = st.selectbox("Ordenar por", ["Más reciente", "Precio más bajo", "Precio más alto"]) 
 
-# --- Reset de página ---
 if st.session_state.get("ultima_busqueda", "") != texto_busqueda:
     st.session_state["pagina_actual"] = 0
     st.session_state["ultima_busqueda"] = texto_busqueda
     pagina = 0
 
-# --- Filtrado de productos ---
 productos_filtrados = [p for p in todos_productos if texto_busqueda.lower() in p.get("nombre_producto", "").lower()] if texto_busqueda.strip() else todos_productos
 
-# --- Ordenamiento ---
 campo_orden = "id"
 asc = False
 if orden == "Precio más bajo":
@@ -161,10 +149,8 @@ elif orden == "Precio más alto":
 
 productos_filtrados.sort(key=lambda x: x.get(campo_orden, 0), reverse=not asc)
 
-# --- Paginación ---
 productos = productos_filtrados[pagina * PRODUCTOS_POR_PAGINA : (pagina + 1) * PRODUCTOS_POR_PAGINA]
 
-# --- Renderizar tarjetas de productos ---
 def render_tarjeta_producto(prod):
     img_url = prod.get('imagen_principal_url', 'https://cdn-icons-png.flaticon.com/512/1828/1828884.png')
     nombre = prod.get('nombre_producto', 'Sin nombre')
@@ -191,12 +177,10 @@ def render_tarjeta_producto(prod):
         </div>
     """
     st.markdown(html, unsafe_allow_html=True)
-    # Botón para ver detalles
     if st.button("👁️‍🗨️ Ver detalles", key=f"detalle_{doc_id}"):
         st.session_state["producto_actual"] = doc_id
         st.switch_page("pages/ver_producto.py")
 
-# --- Renderizar catálogo ---
 if productos:
     cols = st.columns(4)
     for idx, prod in enumerate(productos):
@@ -208,10 +192,14 @@ else:
 # --- Botón para descargar Excel con portada y secundarias separadas ---
 if st.session_state["productos_seleccionados"]:
     seleccionados = [p for p in todos_productos if p["doc_id"] in st.session_state["productos_seleccionados"]]
+
     def obtener_secundarias(p):
-        secundarias = p.get("imagenes_url", "").strip()
-        lista_secundarias = [url.strip() for url in secundarias.split(",") if url.strip()] if secundarias else []
-        return ", ".join(lista_secundarias)
+        secundarias = p.get("imagenes_secundarias_url", "")
+        if isinstance(secundarias, list):
+            return ", ".join([url.strip() for url in secundarias if url.strip()])
+        elif isinstance(secundarias, str):
+            return ", ".join([url.strip() for url in secundarias.split(",") if url.strip()])
+        return ""
 
     df = pd.DataFrame([{
         "Titulo": p.get("nombre_producto", ""),
@@ -234,7 +222,6 @@ if st.session_state["productos_seleccionados"]:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-# --- Paginación: Anterior/Siguiente ---
 col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     if pagina > 0:
@@ -247,7 +234,6 @@ with col3:
 with col2:
     st.markdown(f"<div style='text-align:center;font-size:1.1rem;'>Página {pagina + 1} de {max(1, (len(productos_filtrados) - 1) // PRODUCTOS_POR_PAGINA + 1)}</div>", unsafe_allow_html=True)
 
-# --- Footer ---
 st.markdown("""
 <hr style="border-top:1.7px solid #e5e9f2;">
 <div style="text-align:center;color:#8a8a8a;font-size:0.96rem;">
