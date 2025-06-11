@@ -205,23 +205,26 @@ if productos:
 else:
     st.warning("No hay productos para mostrar.")
 
-# --- Botón para descargar Excel ---
+# --- Botón para descargar Excel con encabezados personalizados ---
 if st.session_state["productos_seleccionados"]:
     seleccionados = [p for p in todos_productos if p["doc_id"] in st.session_state["productos_seleccionados"]]
     df = pd.DataFrame([{
-        "Nombre": p.get("nombre_producto", ""),
+        "Titulo": p.get("nombre_producto", ""),
         "Precio": p.get("precio_facebook", ""),
-        "Categoría": p.get("categoria", ""),
+        "Descripcion": p.get("descripcion", ""),
+        "Categoria": p.get("categoria", ""),
         "Estado": p.get("estado", ""),
-        "Descripción": p.get("descripcion", ""),
-        "Etiquetas": p.get("etiquetas", ""),  # Ya es string separado por coma
-        "Imágenes": ", ".join(
+        "Etiquetas de productos": p.get("etiquetas", ""),
+        "Fotos": ", ".join(
             filter(None, [
                 p.get("imagen_principal_url", "").strip(),
                 p.get("imagenes_url", "").strip()
             ])
         )
     } for p in seleccionados])
+
+    # Limpiar posibles dobles comas y espacios en "Fotos"
+    df["Fotos"] = df["Fotos"].str.replace(", ,", ",").str.replace(",,", ",").str.replace(", ", ",").str.strip(", ")
 
     output = BytesIO()
     df.to_excel(output, index=False)
