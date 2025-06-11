@@ -214,7 +214,13 @@ if st.session_state["productos_seleccionados"]:
         "Categoría": p.get("categoria", ""),
         "Estado": p.get("estado", ""),
         "Descripción": p.get("descripcion", ""),
-        "Imágenes": ", ".join(p.get("imagenes_url", [])) if isinstance(p.get("imagenes_url", []), list) else ""
+        "Etiquetas": p.get("etiquetas", ""),  # Ya es string separado por coma
+        "Imágenes": ", ".join(
+            filter(None, [
+                p.get("imagen_principal_url", "").strip(),
+                p.get("imagenes_url", "").strip()
+            ])
+        )
     } for p in seleccionados])
 
     output = BytesIO()
