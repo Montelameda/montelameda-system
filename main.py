@@ -152,7 +152,7 @@ productos_filtrados.sort(key=lambda x: x.get(campo_orden, 0), reverse=not asc)
 productos = productos_filtrados[pagina * PRODUCTOS_POR_PAGINA : (pagina + 1) * PRODUCTOS_POR_PAGINA]
 
 # --- Selección múltiple mejorada ---
-col_sel1, col_sel2 = st.columns([1, 2])
+col_sel1, col_sel2, col_sel3 = st.columns([1, 2, 2])
 
 with col_sel1:
     if st.button("Seleccionar todos en esta página"):
@@ -165,6 +165,10 @@ with col_sel2:
     if st.button("Seleccionar todos los productos"):
         ids_todos = [prod["doc_id"] for prod in todos_productos]
         st.session_state["productos_seleccionados"] = ids_todos.copy()
+
+with col_sel3:
+    if st.button("Deseleccionar todos"):
+        st.session_state["productos_seleccionados"] = []
 
 def render_tarjeta_producto(prod):
     img_url = prod.get('imagen_principal_url', 'https://cdn-icons-png.flaticon.com/512/1828/1828884.png')
@@ -236,7 +240,7 @@ if st.session_state["productos_seleccionados"]:
     st.download_button(
         label="Descargar Excel de seleccionados",
         data=output,
-        file_name="productos.xlsx",  # Nombre cambiado aquí
+        file_name="productos.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
