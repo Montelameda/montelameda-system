@@ -191,6 +191,10 @@ def render_tarjeta_producto(prod):
         </div>
     """
     st.markdown(html, unsafe_allow_html=True)
+    # Botón para ver detalles
+    if st.button("👁️‍🗨️ Ver detalles", key=f"detalle_{doc_id}"):
+        st.session_state["producto_actual"] = doc_id
+        st.switch_page("pages/ver_producto.py")
 
 # --- Renderizar catálogo ---
 if productos:
