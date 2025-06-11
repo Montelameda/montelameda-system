@@ -205,16 +205,13 @@ if productos:
 else:
     st.warning("No hay productos para mostrar.")
 
-# --- Botón para descargar Excel con encabezados personalizados y todas las imágenes ---
+# --- Botón para descargar Excel con portada y secundarias separadas ---
 if st.session_state["productos_seleccionados"]:
     seleccionados = [p for p in todos_productos if p["doc_id"] in st.session_state["productos_seleccionados"]]
-    def unir_imagenes(p):
-        portada = p.get("imagen_principal_url", "").strip()
+    def obtener_secundarias(p):
         secundarias = p.get("imagenes_url", "").strip()
         lista_secundarias = [url.strip() for url in secundarias.split(",") if url.strip()] if secundarias else []
-        todas = [portada] if portada else []
-        todas += lista_secundarias
-        return ", ".join(todas)
+        return ", ".join(lista_secundarias)
 
     df = pd.DataFrame([{
         "Titulo": p.get("nombre_producto", ""),
@@ -223,7 +220,8 @@ if st.session_state["productos_seleccionados"]:
         "Categoria": p.get("categoria", ""),
         "Estado": p.get("estado", ""),
         "Etiquetas de productos": p.get("etiquetas", ""),
-        "Fotos": unir_imagenes(p)
+        "Portada": p.get("imagen_principal_url", "").strip(),
+        "Secundarias": obtener_secundarias(p)
     } for p in seleccionados])
 
     output = BytesIO()
