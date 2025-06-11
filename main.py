@@ -205,9 +205,17 @@ if productos:
 else:
     st.warning("No hay productos para mostrar.")
 
-# --- Botón para descargar Excel con encabezados personalizados ---
+# --- Botón para descargar Excel con encabezados personalizados y todas las imágenes ---
 if st.session_state["productos_seleccionados"]:
     seleccionados = [p for p in todos_productos if p["doc_id"] in st.session_state["productos_seleccionados"]]
+    def unir_imagenes(p):
+        portada = p.get("imagen_principal_url", "").strip()
+        secundarias = p.get("imagenes_url", "").strip()
+        lista_secundarias = [url.strip() for url in secundarias.split(",") if url.strip()] if secundarias else []
+        todas = [portada] if portada else []
+        todas += lista_secundarias
+        return ", ".join(todas)
+
     df = pd.DataFrame([{
         "Titulo": p.get("nombre_producto", ""),
         "Precio": p.get("precio_facebook", ""),
@@ -215,16 +223,8 @@ if st.session_state["productos_seleccionados"]:
         "Categoria": p.get("categoria", ""),
         "Estado": p.get("estado", ""),
         "Etiquetas de productos": p.get("etiquetas", ""),
-        "Fotos": ", ".join(
-            filter(None, [
-                p.get("imagen_principal_url", "").strip(),
-                p.get("imagenes_url", "").strip()
-            ])
-        )
+        "Fotos": unir_imagenes(p)
     } for p in seleccionados])
-
-    # Limpiar posibles dobles comas y espacios en "Fotos"
-    df["Fotos"] = df["Fotos"].str.replace(", ,", ",").str.replace(",,", ",").str.replace(", ", ",").str.strip(", ")
 
     output = BytesIO()
     df.to_excel(output, index=False)
