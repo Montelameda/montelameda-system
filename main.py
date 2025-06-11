@@ -1,6 +1,9 @@
+import os
+import sys
 import streamlit as st
-import sys, os
-import datetime
+import pandas as pd
+from io import BytesIO
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "modulos"))
 from login_app import login, esta_autenticado, obtener_rol
 import firebase_config
@@ -71,20 +74,16 @@ def actualizar_banner_vendedor(nuevo_texto):
 if rol_usuario == "admin":
     with st.expander("Editar banner de vendedores (opcional)", expanded=False):
         texto_actual = obtener_banner_vendedor()
-        nuevo_texto = st.text_area("Texto del banner (puedes usar emojis y HTML simple)", texto_actual, height=70, key="banner_admin")
+        nuevo_texto = st.text_area("Texto del banner para vendedores", value=texto_actual)
         if st.button("Actualizar banner"):
             actualizar_banner_vendedor(nuevo_texto)
-            st.success("Banner actualizado correctamente.")
+            st.success("Banner actualizado.")
 
 # --- Banner visible para vendedores ---
 if rol_usuario == "vendedor":
     banner_texto = obtener_banner_vendedor()
     if banner_texto.strip():
-        st.markdown(f"""
-            <div style="background:linear-gradient(90deg,#1545a7 60%,#1aa1ff 100%); color:#fff; padding:10px; border-radius:0 0 18px 18px; box-shadow:0 2px 14px #0002; margin-bottom: 18px; font-weight: 600; font-size:1.09rem; text-align:center;">
-                {banner_texto} &nbsp; <span style="font-weight:400;">({datetime.datetime.now().strftime('%d-%m-%Y %H:%M')})</span>
-            </div>
-        """, unsafe_allow_html=True)
+        st.info(banner_texto)
 
 # --- CSS para tarjetas ---
 st.markdown("""
@@ -127,6 +126,10 @@ if "pagina_actual" not in st.session_state:
 
 pagina = st.session_state["pagina_actual"]
 
+# --- Inicializar selección ---
+if "productos_seleccionados" not in st.session_state:
+    st.session_state["productos_seleccionados"] = []
+
 # --- Carga de productos ---
 todos_productos = [doc.to_dict() | {"doc_id": doc.id} for doc in firebase_config.db.collection("productos").stream()]
 
@@ -166,6 +169,13 @@ def render_tarjeta_producto(prod):
     img_url = prod.get('imagen_principal_url', 'https://cdn-icons-png.flaticon.com/512/1828/1828884.png')
     nombre = prod.get('nombre_producto', 'Sin nombre')
     precio = prod.get('precio_facebook', 'N/A')
+    doc_id = prod['doc_id']
+
+    seleccionado = st.checkbox("Seleccionar", key=f"select_{doc_id}", value=doc_id in st.session_state["productos_seleccionados"])
+    if seleccionado and doc_id not in st.session_state["productos_seleccionados"]:
+        st.session_state["productos_seleccionados"].append(doc_id)
+    elif not seleccionado and doc_id in st.session_state["productos_seleccionados"]:
+        st.session_state["productos_seleccionados"].remove(doc_id)
 
     html = f"""
         <div class='product-card-pro'>
@@ -181,36 +191,50 @@ def render_tarjeta_producto(prod):
         </div>
     """
     st.markdown(html, unsafe_allow_html=True)
-    if st.button("👁️‍🗨️ Ver detalles", key=f"detalle_{prod['doc_id']}"):
-        st.session_state["producto_actual"] = prod["doc_id"]
-        st.query_params = {"producto_id": [prod["doc_id"]]}
-        st.switch_page("pages/ver_producto.py")
 
 # --- Renderizar catálogo ---
 if productos:
-    n_cols = 4
-    for i in range(0, len(productos), n_cols):
-        cols = st.columns(n_cols, gap="large")
-        for j, prod in enumerate(productos[i:i + n_cols]):
-            with cols[j]:
-                render_tarjeta_producto(prod)
+    cols = st.columns(4)
+    for idx, prod in enumerate(productos):
+        with cols[idx % 4]:
+            render_tarjeta_producto(prod)
 else:
-    st.warning("No se encontraron productos con la búsqueda ingresada.")
+    st.warning("No hay productos para mostrar.")
+
+# --- Botón para descargar Excel ---
+if st.session_state["productos_seleccionados"]:
+    seleccionados = [p for p in todos_productos if p["doc_id"] in st.session_state["productos_seleccionados"]]
+    df = pd.DataFrame([{
+        "Nombre": p.get("nombre_producto", ""),
+        "Precio": p.get("precio_facebook", ""),
+        "Categoría": p.get("categoria", ""),
+        "Estado": p.get("estado", ""),
+        "Descripción": p.get("descripcion", ""),
+        "Imágenes": ", ".join(p.get("imagenes_url", [])) if isinstance(p.get("imagenes_url", []), list) else ""
+    } for p in seleccionados])
+
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+    st.download_button(
+        label="Descargar Excel de seleccionados",
+        data=output,
+        file_name="productos_seleccionados.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 # --- Paginación: Anterior/Siguiente ---
 col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
-    if st.button("⬅️ Anterior", disabled=pagina == 0):
-        st.session_state["pagina_actual"] -= 1
-        st.rerun()
+    if pagina > 0:
+        if st.button("⬅️ Anterior"):
+            st.session_state["pagina_actual"] -= 1
 with col3:
-    if len(productos) == PRODUCTOS_POR_PAGINA and (pagina + 1) * PRODUCTOS_POR_PAGINA < len(productos_filtrados):
+    if (pagina + 1) * PRODUCTOS_POR_PAGINA < len(productos_filtrados):
         if st.button("Siguiente ➡️"):
             st.session_state["pagina_actual"] += 1
-            st.rerun()
 with col2:
-    total_paginas = max(1, (len(productos_filtrados) + PRODUCTOS_POR_PAGINA - 1) // PRODUCTOS_POR_PAGINA)
-    st.markdown(f"<center><b>Página {pagina + 1} de {total_paginas}</b></center>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align:center;font-size:1.1rem;'>Página {pagina + 1} de {max(1, (len(productos_filtrados) - 1) // PRODUCTOS_POR_PAGINA + 1)}</div>", unsafe_allow_html=True)
 
 # --- Footer ---
 st.markdown("""
