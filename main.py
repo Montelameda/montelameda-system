@@ -189,17 +189,21 @@ if productos:
 else:
     st.warning("No hay productos para mostrar.")
 
-# --- Botón para descargar Excel con portada y secundarias separadas ---
+# --- Botón para descargar Excel con todas las fotos en una sola columna ---
 if st.session_state["productos_seleccionados"]:
     seleccionados = [p for p in todos_productos if p["doc_id"] in st.session_state["productos_seleccionados"]]
 
-    def obtener_secundarias(p):
+    def obtener_fotos(p):
+        portada = p.get("imagen_principal_url", "").strip()
         secundarias = p.get("imagenes_secundarias_url", "")
         if isinstance(secundarias, list):
-            return ", ".join([url.strip() for url in secundarias if url.strip()])
+            secundarias_str = ", ".join([url.strip() for url in secundarias if url.strip()])
         elif isinstance(secundarias, str):
-            return ", ".join([url.strip() for url in secundarias.split(",") if url.strip()])
-        return ""
+            secundarias_str = ", ".join([url.strip() for url in secundarias.split(",") if url.strip()])
+        else:
+            secundarias_str = ""
+        fotos = [url for url in [portada] + secundarias_str.split(",") if url.strip()]
+        return ", ".join(fotos)
 
     df = pd.DataFrame([{
         "Titulo": p.get("nombre_producto", ""),
@@ -208,8 +212,7 @@ if st.session_state["productos_seleccionados"]:
         "Categoria": p.get("categoria", ""),
         "Estado": p.get("estado", ""),
         "Etiquetas de productos": p.get("etiquetas", ""),
-        "Portada": p.get("imagen_principal_url", "").strip(),
-        "Secundarias": obtener_secundarias(p)
+        "Fotos": obtener_fotos(p)
     } for p in seleccionados])
 
     output = BytesIO()
