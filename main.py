@@ -209,7 +209,7 @@ else:
 if st.session_state["productos_seleccionados"]:
     seleccionados = [p for p in todos_productos if p["doc_id"] in st.session_state["productos_seleccionados"]]
     def obtener_secundarias(p):
-        secundarias = p.get("Imágenes secundarias (URLs separadas por coma)", "").strip()
+        secundarias = p.get("imagenes_url", "").strip()
         lista_secundarias = [url.strip() for url in secundarias.split(",") if url.strip()] if secundarias else []
         return ", ".join(lista_secundarias)
 
