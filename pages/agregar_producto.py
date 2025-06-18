@@ -215,7 +215,6 @@ with tabs[2]:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
-
 # TAB 4: Stock y otros
 with tabs[3]:
     st.text_input("Stock", placeholder="Cantidad en stock", key="stock")
