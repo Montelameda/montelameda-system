@@ -199,7 +199,7 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (mejorado: refresca atributos al cambiar nombre/categoría)
+# TAB 5: MercadoLibre (mejorado, muestra TODOS los atributos)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     nombre_ml = st.session_state.get("nombre_producto", "")
@@ -221,10 +221,12 @@ with tabs[4]:
     if cat_detected and cat_detected != st.session_state.get("ml_cat_id", ""):
         st.session_state["ml_cat_id"] = cat_detected
         st.session_state["ml_cat_name"] = cat_name
-        st.rerun()  # <-- fuerza recarga para refrescar atributos
+        st.rerun()
 
-    cat_default = st.session_state.get("ml_cat_id", cat_detected or "")
-    ml_cat_id = st.text_input("ID categoría ML", value=cat_default, key="ml_cat_id", help="Se detecta según el título; edita si prefieres otra")
+    # Quita el warning de Streamlit: solo key, setea antes el valor
+    if "ml_cat_id" not in st.session_state or not st.session_state["ml_cat_id"]:
+        st.session_state["ml_cat_id"] = cat_detected
+    ml_cat_id = st.text_input("ID categoría ML", key="ml_cat_id", help="Se detecta según el título; edita si prefieres otra")
 
     # Si editan la categoría manual, refrescar atributos
     if "last_ml_cat_id" not in st.session_state:
@@ -233,11 +235,11 @@ with tabs[4]:
         st.session_state["last_ml_cat_id"] = ml_cat_id
         st.session_state["ml_attrs_loaded"] = False
 
-    # Obtener y mostrar atributos requeridos ML
+    # Obtener y mostrar atributos ML (TODOS)
     req_attrs = []
     if ml_cat_id and (not st.session_state.get("ml_attrs_loaded", False)):
         try:
-            req_attrs = ml_api.get_required_attrs(ml_cat_id)
+            req_attrs = ml_api.get_all_attrs(ml_cat_id)
             st.session_state["req_attrs"] = req_attrs
             st.session_state["ml_attrs_loaded"] = True
         except Exception as e:
@@ -246,21 +248,25 @@ with tabs[4]:
     else:
         req_attrs = st.session_state.get("req_attrs", [])
 
-    ml_attr_vals = {}
-    for attr in req_attrs:
-        aid = attr["id"]
-        nombre = attr["name"]
-        vtype = attr["value_type"]
-        if vtype in ("boolean"):
-            opt = ["Sí", "No"]
-            ml_attr_vals[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
-        elif vtype in ("list",):
-            opt = [v["name"] for v in attr.get("values", [])]
-            ml_attr_vals[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
-        else:
-            ml_attr_vals[aid] = st.text_input(nombre, key=f"ml_{aid}")
+    # Mostrar todos los atributos aunque no sean obligatorios
+    if not req_attrs:
+        st.info("No hay atributos para esta categoría, solo debes completar el resto del formulario.")
+    else:
+        ml_attr_vals = {}
+        for attr in req_attrs:
+            aid = attr["id"]
+            nombre = attr["name"]
+            vtype = attr["value_type"]
+            if vtype in ("boolean"):
+                opt = ["Sí", "No"]
+                ml_attr_vals[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
+            elif vtype in ("list",):
+                opt = [v["name"] for v in attr.get("values", [])]
+                ml_attr_vals[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
+            else:
+                ml_attr_vals[aid] = st.text_input(nombre, key=f"ml_{aid}")
 
-    st.session_state["ml_attrs"] = ml_attr_vals
+        st.session_state["ml_attrs"] = ml_attr_vals
 
 # --- Diccionario FINAL de producto (38 columnas) ---
 nuevo = {
