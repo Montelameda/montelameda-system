@@ -5,3 +5,4 @@ pillow
 requests
 pandas
 openpyxl
+python-dateutil
