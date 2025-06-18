@@ -5,20 +5,43 @@ import datetime
 import math
 import ml_api  # integración MercadoLibre
 
-# --- FUNCIÓN FLOAT ROBUSTA ---
+# --- Utilidad para convertir cualquier cosa a float seguro ---
 def to_float(val):
-    try:
-        if val is None or str(val).strip() == "" or str(val).lower() in ["nan", "none", "null"]:
-            return 0.0
-        return float(str(val).replace(",", "."))
-    except:
+    """
+    Convierte cualquier valor recibido a un número float seguro.
+    Si está vacío, None o no es número, retorna 0.0.
+    También reemplaza comas por puntos para decimales.
+    """
+    if val is None:
         return 0.0
+    try:
+        return float(str(val).replace(",", "."))
+    except Exception:
+        return 0.0
+
+# --- Tabla de comisiones y costo fijo por categoría (puedes expandirla) ---
+# Ejemplo real para Chile: 13% y costo fijo de $700 o $1000 según precio
+COMISIONES_DEFAULT = {
+    "porcentaje": 13,  # Porcentaje general de ML Chile
+    "costo_fijo_bajo": 700,   # Para ventas <= $9.990
+    "costo_fijo_alto": 1000,  # Para ventas > $9.990
+    "umbral_costo_fijo": 9990
+}
+
+# --- Función para calcular comisión MercadoLibre ---
+def calcular_comision_ml(precio, porcentaje=None):
+    porcentaje = porcentaje if porcentaje is not None else COMISIONES_DEFAULT["porcentaje"]
+    if precio > COMISIONES_DEFAULT["umbral_costo_fijo"]:
+        costo_fijo = COMISIONES_DEFAULT["costo_fijo_alto"]
+    else:
+        costo_fijo = COMISIONES_DEFAULT["costo_fijo_bajo"]
+    comision = round(precio * porcentaje / 100 + costo_fijo)
+    return comision, porcentaje, costo_fijo
 
 # --- Autenticación ---
 if not esta_autenticado():
     login()
     st.stop()
-
 rol_usuario = obtener_rol()
 if rol_usuario != "admin":
     st.error("Acceso solo para administradores.")
@@ -47,29 +70,19 @@ def limpiar_valor(valor):
 def filtrar_campos(diccionario):
     return {k: v for k, v in diccionario.items() if k and v not in [None, ""]}
 
+# --- CSS personalizado ---
 st.markdown("""
 <style>
 body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 .container { max-width: 1200px; margin: auto; }
 .card { background-color: #fff; padding: 20px; border-radius: 10px;
         box-shadow: 0px 4px 6px rgba(0,0,0,0.09); margin-bottom: 20px; }
-.thumbnail { width: 80px; height: 80px; object-fit: cover; border-radius: 5px; margin-right: 10px; display: inline-block; }
 .valor-positivo { color: #19c319; font-weight: bold; font-size: 1.3em; }
 .valor-negativo { color: #f12b2b; font-weight: bold; font-size: 1.3em; }
 .valor-iva { color: #0e7ae6; font-weight: bold; }
 .resaltado { background: #e8ffe8; border-radius: 6px; padding: 2px 10px; display: inline-block; margin: 0.3em 0; }
-.badge-info {
-    display:inline-block;
-    background: #eef3ff;
-    color: #205ec5;
-    font-size: 0.97rem;
-    font-weight: 700;
-    border-radius: 7px;
-    padding: 4px 13px;
-    margin: 0 0 0 8px;
-}
-.ml-cat-path { color:#222; font-weight:700; font-size:1.05em;}
-.ml-cat-code { color:#999; font-size:0.98em; margin-left:4px;}
+.info-ml-comision {font-size:0.98em;color:#205ec5;background:#f8fafd;border-radius:7px;padding:7px 13px;margin-bottom:8px;margin-top:4px;}
+.ml-categoria {font-size:1.04em;color:#1545a7;font-weight:600;margin:5px 0 0 0;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -129,7 +142,7 @@ with tabs[1]:
     st.text_input("Imágenes secundarias (URLs separadas por coma)", placeholder="https://..., https://...", key="imagenes_secundarias_url")
     if st.session_state.get("imagenes_secundarias_url"):
         urls = [url.strip() for url in st.session_state.get("imagenes_secundarias_url").split(",") if url.strip() != ""]
-        st.markdown(" ".join([f'<img src="{u}" class="thumbnail">' for u in urls]), unsafe_allow_html=True)
+        st.markdown(" ".join([f'<img src="{u}" style="width:70px;border-radius:8px;margin-right:5px;">' for u in urls]), unsafe_allow_html=True)
     st.text_input("Etiquetas", placeholder="Palabras clave separadas por coma", key="etiquetas")
     st.text_input("Foto de proveedor", placeholder="URL de la foto", key="foto_proveedor")
 
@@ -142,13 +155,13 @@ with tabs[2]:
     # --- Facebook ---
     with col_fb:
         st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
-        st.text_input("Precio", placeholder="Precio para Facebook", key="precio_facebook")
+        st.text_input("Precio para Facebook", placeholder="Precio para Facebook", key="precio_facebook")
         st.text_input("Comisión", placeholder="Comisión", key="comision_vendedor_facebook")
         st.text_input("Precio al por mayor de 3", placeholder="Precio al por mayor", key="precio_mayor_3")
         try:
-            precio_fb = to_float(st.session_state.get("precio_facebook", 0))
-            comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
-            precio_compra = to_float(st.session_state.get("precio_compra", 0))
+            precio_fb = to_float(st.session_state.get("precio_facebook"))
+            comision_fb = to_float(st.session_state.get("comision_vendedor_facebook"))
+            precio_compra = to_float(st.session_state.get("precio_compra"))
             ganancia_fb = precio_fb - precio_compra - comision_fb
             color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
@@ -160,60 +173,40 @@ with tabs[2]:
     with col_ml:
         st.markdown("🛒 <b>Mercado Libre</b>", unsafe_allow_html=True)
         precio_ml = st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
-        
-        # --- DETECTAR CATEGORÍA ML ---
-        nombre_producto = st.session_state.get("nombre_producto", "")
-        ml_cat_id, ml_cat_name = "", ""
-        if nombre_producto:
+        precio_ml_float = to_float(precio_ml)
+
+        # --- Detectar categoría y mostrar ---
+        nombre_ml = st.session_state.get("nombre_producto", "")
+        cat_detected, cat_name, cat_path = "", "", ""
+        if nombre_ml:
             try:
-                cat_sug = ml_api.suggest_categories(nombre_producto)
-                if cat_sug:
-                    ml_cat_id, ml_cat_name = cat_sug[0]
-            except:
-                pass
+                cats = ml_api.suggest_categories(nombre_ml)
+                if cats:
+                    cat_detected, cat_name = cats[0]
+                    cat_path = ml_api.get_category_path(cat_detected)
+            except Exception:
+                cat_detected, cat_name, cat_path = "", "", ""
 
-        # Mostrar categoría + nombre completo
-        if ml_cat_id:
-            st.markdown(
-                f'<span class="ml-cat-path">Categoría ML detectada:</span> {ml_cat_name} <span class="ml-cat-code">({ml_cat_id})</span>',
-                unsafe_allow_html=True
-            )
+        if cat_detected:
+            st.markdown(f"<div class='ml-categoria'>Categoría ML detectada: <b>{cat_detected}</b> - {cat_path if cat_path else cat_name}</div>", unsafe_allow_html=True)
 
-        # --- COMISIÓN ML Y COSTO FIJO ---
-        # Lógica local, pero puede usarse ml_api.get_commission_info(ml_cat_id) si tienes API propia
-        try:
-            porcentaje = 13.0  # Por defecto
-            porcentaje_label = "13%"
-            if ml_cat_id:
-                comm_info = ml_api.get_commission_info(ml_cat_id)
-                porcentaje = comm_info.get("percentage", 13.0)
-                porcentaje_label = comm_info.get("label", f"{porcentaje:.0f}%")
-            precio_ml_float = to_float(precio_ml)
-            # Costo fijo dinámico por precio
-            if precio_ml_float < 9990:
-                costo_fijo = 700
-            else:
-                costo_fijo = 1000
-            st.caption(
-                f'<span class="badge-info">Comisión ML: {porcentaje_label} + ${costo_fijo} fijo</span>',
-                unsafe_allow_html=True
-            )
-        except Exception as e:
-            porcentaje = 13.0
-            costo_fijo = 700
-
-        # --- COMISIÓN Y GANANCIA ---
-        comision_ml = round(precio_ml_float * porcentaje / 100 + costo_fijo)
+        # --- Calcular comisión ML automática ---
+        porcentaje_ml = ml_api.get_category_fee(cat_detected) if cat_detected else COMISIONES_DEFAULT["porcentaje"]
+        comision_ml, porcentaje_usado, costo_fijo_usado = calcular_comision_ml(precio_ml_float, porcentaje_ml)
         st.text_input("Comisión", value=f"{comision_ml}", key="comision_mercado_libre", disabled=True)
-        envio_ml = st.text_input("Envío", value="0", key="envio_mercado_libre")
+        st.text_input("Envío", placeholder="Costo de envío", key="envio_mercado_libre")
+        # Mostrar detalle comisión debajo, elegante
+        st.markdown(f"""<div class='info-ml-comision'>
+        <b>Comisión MercadoLibre: {porcentaje_usado}% + ${costo_fijo_usado} fijo</b>
+        </div>""", unsafe_allow_html=True)
 
         try:
-            precio_compra = to_float(st.session_state.get("precio_compra", 0))
-            envio_ml_val = to_float(envio_ml)
-            ganancia_ml_estimada = precio_ml_float - precio_compra - comision_ml - envio_ml_val
+            envio_ml = to_float(st.session_state.get("envio_mercado_libre"))
+            precio_compra = to_float(st.session_state.get("precio_compra"))
+            ganancia_ml_estimada = precio_ml_float - precio_compra - comision_ml - envio_ml
             color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml}'>✅ {ganancia_ml_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta = precio_ml_float - comision_ml - envio_ml_val
+            ganancia_bruta = precio_ml_float - comision_ml - envio_ml
             iva_19 = ganancia_bruta * 0.19
             ganancia_ml_neta = ganancia_bruta - iva_19 - precio_compra
             st.markdown(f"<span class='valor-iva'>🟩 Ganancia de ML descontando IVA 19%: {ganancia_ml_neta:.0f} CLP</span>", unsafe_allow_html=True)
@@ -224,32 +217,19 @@ with tabs[2]:
 
     # --- ML con 30% desc. ---
     with col_ml30:
-        st.markdown("📉 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
+        st.markdown("🩷 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
+        precio_ml_desc = precio_ml_float - (precio_ml_float * 0.3)
+        st.text_input("Precio", value=f"{precio_ml_desc:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
+        comision_ml_desc, porcentaje_ml_desc, costo_fijo_ml_desc = calcular_comision_ml(precio_ml_desc, porcentaje_ml)
+        st.text_input("Comisión", value=f"{comision_ml_desc}", key="comision_mercado_libre_30_desc", disabled=True)
+        st.text_input("Envío", placeholder="Envío", key="envio_mercado_libre_30_desc")
         try:
-            precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
-            precio_ml_desc = precio_ml - (precio_ml * 0.3)
-            st.text_input("Precio", value=f"{precio_ml_desc:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
-        except:
-            st.text_input("Precio", value="", key="precio_mercado_libre_30_desc", disabled=True)
-        # Se calcula comisión igual pero según PRECIO DESCONTADO
-        try:
-            # Reusa porcentaje y lógica de costo fijo
-            if precio_ml_desc < 9990:
-                costo_fijo_30 = 700
-            else:
-                costo_fijo_30 = 1000
-            comision_ml_desc = round(precio_ml_desc * porcentaje / 100 + costo_fijo_30)
-            st.text_input("Comisión", value=f"{comision_ml_desc}", key="comision_mercado_libre_30_desc", disabled=True)
-        except:
-            st.text_input("Comisión", value="", key="comision_mercado_libre_30_desc", disabled=True)
-        envio_ml_desc = st.text_input("Envío", value="0", key="envio_mercado_libre_30_desc")
-        try:
-            precio_compra = to_float(st.session_state.get("precio_compra", 0))
-            envio_ml_desc_val = to_float(envio_ml_desc)
-            ganancia_ml_desc_estimada = precio_ml_desc - precio_compra - comision_ml_desc - envio_ml_desc_val
+            envio_ml_desc = to_float(st.session_state.get("envio_mercado_libre_30_desc"))
+            precio_compra = to_float(st.session_state.get("precio_compra"))
+            ganancia_ml_desc_estimada = precio_ml_desc - precio_compra - comision_ml_desc - envio_ml_desc
             color_ml_desc = "valor-positivo" if ganancia_ml_desc_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml_desc}'>✅ {ganancia_ml_desc_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta_desc = precio_ml_desc - comision_ml_desc - envio_ml_desc_val
+            ganancia_bruta_desc = precio_ml_desc - comision_ml_desc - envio_ml_desc
             iva_19_desc = ganancia_bruta_desc * 0.19
             ganancia_ml_desc_neta = ganancia_bruta_desc - iva_19_desc - precio_compra
             st.markdown(f"<span class='valor-iva'>🟩 Ganancia ML -30% con IVA 19%: {ganancia_ml_desc_neta:.0f} CLP</span>", unsafe_allow_html=True)
@@ -271,14 +251,13 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (muestra TODOS los atributos)
+# TAB 5: MercadoLibre (mejorado, muestra TODOS los atributos)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     nombre_ml = st.session_state.get("nombre_producto", "")
     if "ml_cat_id" not in st.session_state or st.session_state.get("ml_cat_name") is None:
         st.session_state.ml_cat_id = ""
         st.session_state.ml_cat_name = ""
-
     # Detectar categoría ML si cambia el nombre del producto
     cat_detected, cat_name = "", ""
     if nombre_ml:
@@ -288,25 +267,20 @@ with tabs[4]:
                 cat_detected, cat_name = cats[0]
         except Exception as e:
             cat_detected, cat_name = "", ""
-
     # Guardar categoría detectada en session_state (solo si cambia)
     if cat_detected and cat_detected != st.session_state.get("ml_cat_id", ""):
         st.session_state["ml_cat_id"] = cat_detected
         st.session_state["ml_cat_name"] = cat_name
         st.rerun()
-
-    # Quita el warning de Streamlit: solo key, setea antes el valor
     if "ml_cat_id" not in st.session_state or not st.session_state["ml_cat_id"]:
         st.session_state["ml_cat_id"] = cat_detected
     ml_cat_id = st.text_input("ID categoría ML", key="ml_cat_id", help="Se detecta según el título; edita si prefieres otra")
-
     # Si editan la categoría manual, refrescar atributos
     if "last_ml_cat_id" not in st.session_state:
         st.session_state["last_ml_cat_id"] = ""
     if ml_cat_id != st.session_state["last_ml_cat_id"]:
         st.session_state["last_ml_cat_id"] = ml_cat_id
         st.session_state["ml_attrs_loaded"] = False
-
     # Obtener y mostrar atributos ML (TODOS)
     req_attrs = []
     if ml_cat_id and (not st.session_state.get("ml_attrs_loaded", False)):
@@ -319,7 +293,6 @@ with tabs[4]:
             st.session_state["req_attrs"] = []
     else:
         req_attrs = st.session_state.get("req_attrs", [])
-
     # Mostrar todos los atributos aunque no sean obligatorios
     if not req_attrs:
         st.info("No hay atributos para esta categoría, solo debes completar el resto del formulario.")
@@ -358,12 +331,12 @@ nuevo = {
     "comision_vendedor_facebook": limpiar_valor(st.session_state.get("comision_vendedor_facebook")),
     "ganancia_facebook": str(ganancia_fb) if "ganancia_fb" in locals() and ganancia_fb is not None else "",
     "precio_mercado_libre": limpiar_valor(st.session_state.get("precio_mercado_libre")),
-    "comision_mercado_libre": comision_ml if "comision_ml" in locals() else "",
+    "comision_mercado_libre": str(comision_ml) if "comision_ml" in locals() and comision_ml is not None else "",
     "envio_mercado_libre": limpiar_valor(st.session_state.get("envio_mercado_libre")),
     "ganancia_mercado_libre": str(ganancia_ml_estimada) if "ganancia_ml_estimada" in locals() and ganancia_ml_estimada is not None else "",
     "ganancia_mercado_libre_iva": f"{ganancia_ml_neta:.0f}" if "ganancia_ml_neta" in locals() and ganancia_ml_neta is not None else "",
     "precio_mercado_libre_30_desc": f"{precio_ml_desc:.0f}" if "precio_ml_desc" in locals() else "",
-    "comision_mercado_libre_30_desc": comision_ml_desc if "comision_ml_desc" in locals() else "",
+    "comision_mercado_libre_30_desc": str(comision_ml_desc) if "comision_ml_desc" in locals() else "",
     "envio_mercado_libre_30_desc": limpiar_valor(st.session_state.get("envio_mercado_libre_30_desc")),
     "ganancia_mercado_libre_30_desc": str(ganancia_ml_desc_estimada) if "ganancia_ml_desc_estimada" in locals() and ganancia_ml_desc_estimada is not None else "",
     "ganancia_mercado_libre_iva_30_desc": f"{ganancia_ml_desc_neta:.0f}" if "ganancia_ml_desc_neta" in locals() and ganancia_ml_desc_neta is not None else "",
@@ -379,8 +352,7 @@ nuevo = {
     "cantidad_vendida": limpiar_valor(st.session_state.get("cantidad_vendida")),
     "ultima_entrada": limpiar_valor(st.session_state.get("ultima_entrada")),
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
-    "ml_cat_id": ml_cat_id,
-    "ml_cat_name": ml_cat_name,
+    "ml_cat_id": limpiar_valor(st.session_state.get("ml_cat_id")),
     "ml_attrs": st.session_state.get("ml_attrs"),
 }
 
