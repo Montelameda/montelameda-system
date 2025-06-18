@@ -1,11 +1,24 @@
 import streamlit as st
-import firebase_config
-from login_app import login, esta_autenticado, obtener_rol
+import sys
+import os
 import datetime
 import math
-import requests
-import ml_api
 import time
+
+from login_app import login, esta_autenticado, obtener_rol
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "modulos"))
+import firebase_config
+import ml_api  # integración MercadoLibre
+
+# === TABLA DE COMISIONES Y COSTO FIJO ML POR CATEGORÍA ===
+COMISIONES_ML = {
+    # cat_id : (porcentaje, costo_fijo)
+    "MLC12345": (0.13, 700),   # EJEMPLO: 13%, $700
+    "MLC54321": (0.17, 2500),  # EJEMPLO: 17%, $2500
+    # Agrega tus categorías reales aquí
+}
+DEFAULT_COMISION = (0.13, 700)
 
 # --- Autenticación ---
 if not esta_autenticado():
@@ -60,19 +73,6 @@ def limpiar_valor(valor):
 def filtrar_campos(diccionario):
     return {k: v for k, v in diccionario.items() if k and v not in [None, ""]}
 
-def obtener_comision_envio_ml(precio, categoria_id):
-    if not precio or not categoria_id:
-        return 0, 0
-    url = f"https://api.mercadolibre.com/sites/MLC/listing_prices?price={precio}&category_id={categoria_id}"
-    try:
-        resp = requests.get(url, timeout=8).json()
-        fee_info = next((f for f in resp if f['listing_type_id'] == 'gold_pro'), resp[0])
-        comision = fee_info['sale_fee_amount']
-        envio = fee_info.get('shipping_cost', 0)
-        return comision, envio
-    except Exception:
-        return 0, 0
-
 # --- Custom CSS ---
 st.markdown("""
 <style>
@@ -85,47 +85,52 @@ body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 .valor-negativo { color: #f12b2b; font-weight: bold; font-size: 1.3em; }
 .valor-iva { color: #0e7ae6; font-weight: bold; }
 .resaltado { background: #e8ffe8; border-radius: 6px; padding: 2px 10px; display: inline-block; margin: 0.3em 0; }
-.promo-btn {background-color:#1e78fa;color:#fff;padding:7px 18px;font-weight:700;border:none;border-radius:9px;font-size:1.11rem;}
-.promo-btn-applied {background-color:#97caff;color:#234;font-weight:700;padding:7px 18px;border:none;border-radius:9px;font-size:1.11rem;}
+.ml-comision-detalle { color:#205ec5; font-size:0.99em; margin-top:2px; font-weight:600; }
+.ml-categoria { color:#555; font-size:1.05em; margin-bottom:8px; }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<div class='container'>", unsafe_allow_html=True)
-
-# --- TÍTULO ---
 st.markdown("<h1 style='text-align: center;'>✏️ Editar producto</h1>", unsafe_allow_html=True)
 st.markdown(f"<h3 style='text-align: center; color: #205ec5;'>🆔 ID producto: {a_str(producto.get('id',''))}</h3>", unsafe_allow_html=True)
-
-# --- Precarga datos SOLO la primera vez por producto ---
-if "form_precargado" not in st.session_state:
-    for key in producto:
-        st.session_state[key] = a_str(producto.get(key, ""))
-    st.session_state.form_precargado = True
 
 # --- Progreso del formulario ---
 obligatorios_ids = [
     "codigo_barra", "codigo_minimo", "proveedor", "nombre_producto", "categoria", "marca",
     "descripcion", "estado", "precio_facebook", "comision_vendedor_facebook", "precio_compra"
 ]
+
+# --- Precarga datos SOLO la primera vez por producto ---
+if "form_precargado" not in st.session_state:
+    for campo in [
+        "codigo_barra", "codigo_minimo", "proveedor", "nombre_producto", "categoria", "marca",
+        "descripcion", "estado", "imagen_principal_url", "imagenes_secundarias_url", "etiquetas",
+        "foto_proveedor", "precio_compra", "precio_facebook", "comision_vendedor_facebook",
+        "precio_mayor_3", "precio_mercado_libre", "comision_mercado_libre", "envio_mercado_libre",
+        "comision_mercado_libre_30_desc", "envio_mercado_libre_30_desc", "stock", "mostrar_catalogo",
+        "id_publicacion_mercado_libre", "link_publicacion_1", "link_publicacion_2", "link_publicacion_3",
+        "link_publicacion_4", "cantidad_vendida", "ultima_entrada", "ultima_salida"
+    ]:
+        st.session_state[campo] = a_str(producto.get(campo, ""))
+    st.session_state.form_precargado = True
+
 campos_llenos = sum(1 for k in obligatorios_ids if st.session_state.get(k))
 progreso = int((campos_llenos / len(obligatorios_ids)) * 100)
 st.progress(progreso, text=f"Formulario completado: {progreso}%")
 
-# --- SECCIÓN TABS ---
 tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones", "🛒 MercadoLibre"])
 
-# TAB 1: Identificación
 with tabs[0]:
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.text_input("Código de barra *", placeholder="Ej: 1234567890", key="codigo_barra")
-        st.text_input("Nombre del producto *", placeholder="Ej: Camiseta deportiva", key="nombre_producto", max_chars=60)
+        st.text_input("Código de barra *", key="codigo_barra")
+        st.text_input("Nombre del producto *", key="nombre_producto", max_chars=60)
         docs_cat = firebase_config.db.collection("categorias").stream()
         categorias = sorted([a_str(doc.to_dict()["nombre"]) for doc in docs_cat if "nombre" in doc.to_dict()])
         st.selectbox("Categoría *", options=categorias, key="categoria")
     with col2:
-        st.text_input("Código mínimo *", placeholder="Ej: 001", key="codigo_minimo")
-        st.text_input("Marca *", placeholder="Ej: Nike", key="marca")
+        st.text_input("Código mínimo *", key="codigo_minimo")
+        st.text_input("Marca *", key="marca")
         docs_prov = firebase_config.db.collection("proveedores").stream()
         proveedores = sorted([a_str(doc.to_dict()["nombre"]) for doc in docs_prov if "nombre" in doc.to_dict()])
         opciones_proveedores = proveedores + ["Agregar nuevo"]
@@ -143,31 +148,28 @@ with tabs[0]:
     with col3:
         st.selectbox("Estado *", options=["Nuevo", "Usado"], key="estado")
 
-# TAB 2: Visuales y Descripción
 with tabs[1]:
-    st.text_area("Descripción *", placeholder="Detalles del producto...", key="descripcion")
-    st.text_input("Imagen principal (URL)", placeholder="https://...", key="imagen_principal_url")
+    st.text_area("Descripción *", key="descripcion")
+    st.text_input("Imagen principal (URL)", key="imagen_principal_url")
     if st.session_state.get("imagen_principal_url", "").startswith("http"):
         st.image(st.session_state.get("imagen_principal_url"), width=200)
-    st.text_input("Imágenes secundarias (URLs separadas por coma)", placeholder="https://..., https://...", key="imagenes_secundarias_url")
+    st.text_input("Imágenes secundarias (URLs separadas por coma)", key="imagenes_secundarias_url")
     if st.session_state.get("imagenes_secundarias_url"):
         urls = [url.strip() for url in st.session_state.get("imagenes_secundarias_url").split(",") if url.strip() != ""]
         st.markdown(" ".join([f'<img src="{u}" class="thumbnail">' for u in urls]), unsafe_allow_html=True)
-    st.text_input("Etiquetas", placeholder="Palabras clave separadas por coma", key="etiquetas")
-    st.text_input("Foto de proveedor", placeholder="URL de la foto", key="foto_proveedor")
+    st.text_input("Etiquetas", key="etiquetas")
+    st.text_input("Foto de proveedor", key="foto_proveedor")
 
-# TAB 3: PRECIOS
 with tabs[2]:
-    st.text_input("Precio compra *", placeholder="Costo del producto", key="precio_compra")
+    st.text_input("Precio compra *", key="precio_compra")
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
-
     col_fb, col_ml, col_ml30 = st.columns(3)
     # --- Facebook ---
     with col_fb:
         st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
-        st.text_input("Precio", placeholder="Precio para Facebook", key="precio_facebook")
-        st.text_input("Comisión", placeholder="Comisión", key="comision_vendedor_facebook")
-        st.text_input("Precio al por mayor de 3", placeholder="Precio al por mayor", key="precio_mayor_3")
+        st.text_input("Precio", key="precio_facebook")
+        st.text_input("Comisión", key="comision_vendedor_facebook")
+        st.text_input("Precio al por mayor de 3", key="precio_mayor_3")
         try:
             precio_fb = float(st.session_state.get("precio_facebook", "0"))
             comision_fb = float(st.session_state.get("comision_vendedor_facebook", "0"))
@@ -179,29 +181,39 @@ with tabs[2]:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_fb = None
 
-    # --- Mercado Libre (TIEMPO REAL) ---
+    # --- Mercado Libre ---
     with col_ml:
         st.markdown("🛒 <b>Mercado Libre</b>", unsafe_allow_html=True)
-        precio_ml = st.text_input("Precio para ML", value=st.session_state.get("precio_mercado_libre", ""), key="precio_mercado_libre")
-        ml_cat_id = st.session_state.get("ml_cat_id", "")
-        comision_ml, envio_ml = 0, 0
-
-        if precio_ml and ml_cat_id:
+        precio_ml = st.text_input("Precio para ML", key="precio_mercado_libre", value=st.session_state.get("precio_mercado_libre", ""))
+        precio_ml = float(precio_ml) if precio_ml else 0
+        nombre_ml = st.session_state.get("nombre_producto", "")
+        cat_detected, cat_name = "", ""
+        if nombre_ml:
             try:
-                comision_ml, envio_ml = obtener_comision_envio_ml(float(precio_ml), ml_cat_id)
-            except:
-                comision_ml, envio_ml = 0, 0
-        st.session_state["comision_mercado_libre"] = str(comision_ml)
-        st.session_state["envio_mercado_libre"] = str(envio_ml)
-        st.text_input("Comisión", value=str(comision_ml), key="comision_mercado_libre", disabled=True)
-        st.text_input("Envío", value=str(envio_ml), key="envio_mercado_libre", disabled=True)
+                cats = ml_api.suggest_categories(nombre_ml)
+                if cats:
+                    cat_detected, cat_name = cats[0]
+            except Exception:
+                pass
+        if not cat_detected:
+            cat_detected = st.session_state.get("ml_cat_id", "")
+        if cat_detected:
+            st.session_state["ml_cat_id"] = cat_detected
+            st.session_state["ml_cat_name"] = cat_name
 
+        comision_porcentaje, costo_fijo = COMISIONES_ML.get(cat_detected, DEFAULT_COMISION)
+        st.markdown(f"<div class='ml-categoria'><b>Categoría ML detectada:</b> {cat_detected} - {cat_name if cat_name else ''}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='ml-comision-detalle'>Comisión MercadoLibre: <b>{int(comision_porcentaje*100)}%</b> + ${costo_fijo} fijo</div>", unsafe_allow_html=True)
+        comision_ml = int(precio_ml * comision_porcentaje) + costo_fijo if precio_ml > 0 else 0
+        st.text_input("Comisión", value=str(comision_ml), key="comision_mercado_libre", disabled=True)
+        envio_ml = st.text_input("Envío", key="envio_mercado_libre", value=st.session_state.get("envio_mercado_libre", "0"))
+        envio_ml = float(envio_ml) if envio_ml else 0
+        precio_compra = float(st.session_state.get("precio_compra", "0"))
         try:
-            precio_compra = float(st.session_state.get("precio_compra", "0"))
-            ganancia_ml_estimada = float(precio_ml) - precio_compra - float(comision_ml) - float(envio_ml)
+            ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - envio_ml
             color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml}'>✅ {ganancia_ml_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta = float(precio_ml) - float(comision_ml) - float(envio_ml)
+            ganancia_bruta = precio_ml - comision_ml - envio_ml
             iva_19 = ganancia_bruta * 0.19
             ganancia_ml_neta = ganancia_bruta - iva_19 - precio_compra
             st.markdown(f"<span class='valor-iva'>🟩 Ganancia de ML descontando IVA 19%: {ganancia_ml_neta:.0f} CLP</span>", unsafe_allow_html=True)
@@ -213,19 +225,13 @@ with tabs[2]:
     # --- ML con 30% desc. ---
     with col_ml30:
         st.markdown("📉 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
+        precio_ml_desc = precio_ml - (precio_ml * 0.3)
+        st.text_input("Precio", value=f"{precio_ml_desc:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
+        comision_ml_desc = int(precio_ml_desc * comision_porcentaje) + costo_fijo if precio_ml_desc > 0 else 0
+        st.text_input("Comisión", value=str(comision_ml_desc), key="comision_mercado_libre_30_desc", disabled=True)
+        envio_ml_desc = st.text_input("Envío", value=envio_ml, key="envio_mercado_libre_30_desc")
+        envio_ml_desc = float(envio_ml_desc) if envio_ml_desc else 0
         try:
-            precio_ml = float(st.session_state.get("precio_mercado_libre", "0"))
-            precio_ml_desc = precio_ml - (precio_ml * 0.3)
-            st.text_input("Precio", value=f"{precio_ml_desc:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
-        except:
-            st.text_input("Precio", value="", key="precio_mercado_libre_30_desc", disabled=True)
-        st.text_input("Comisión", value=st.session_state.get("comision_mercado_libre", "0"), key="comision_mercado_libre_30_desc", disabled=True)
-        st.text_input("Envío", value=st.session_state.get("envio_mercado_libre", "0"), key="envio_mercado_libre_30_desc", disabled=True)
-        try:
-            precio_ml_desc = float(st.session_state.get("precio_mercado_libre_30_desc", "0"))
-            comision_ml_desc = float(st.session_state.get("comision_mercado_libre_30_desc", "0"))
-            envio_ml_desc = float(st.session_state.get("envio_mercado_libre_30_desc", "0"))
-            precio_compra = float(st.session_state.get("precio_compra", "0"))
             ganancia_ml_desc_estimada = precio_ml_desc - precio_compra - comision_ml_desc - envio_ml_desc
             color_ml_desc = "valor-positivo" if ganancia_ml_desc_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml_desc}'>✅ {ganancia_ml_desc_estimada:.0f} CLP</span>", unsafe_allow_html=True)
@@ -238,20 +244,18 @@ with tabs[2]:
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
 
-# TAB 4: Stock y otros
 with tabs[3]:
-    st.text_input("Stock", placeholder="Cantidad en stock", key="stock")
-    st.text_input("Mostrar en catálogo", placeholder="Sí/No", key="mostrar_catalogo")
-    st.text_input("ID Publicación Mercado Libre", placeholder="ID de la publicación", key="id_publicacion_mercado_libre")
-    st.text_input("Link publicación 1", placeholder="https://...", key="link_publicacion_1")
-    st.text_input("Link publicación 2", placeholder="https://...", key="link_publicacion_2")
-    st.text_input("Link publicación 3", placeholder="https://...", key="link_publicacion_3")
-    st.text_input("Link publicación 4", placeholder="https://...", key="link_publicacion_4")
-    st.text_input("Cantidad vendida", placeholder="Ej: 0", key="cantidad_vendida")
-    st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
-    st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
+    st.text_input("Stock", key="stock")
+    st.text_input("Mostrar en catálogo", key="mostrar_catalogo")
+    st.text_input("ID Publicación Mercado Libre", key="id_publicacion_mercado_libre")
+    st.text_input("Link publicación 1", key="link_publicacion_1")
+    st.text_input("Link publicación 2", key="link_publicacion_2")
+    st.text_input("Link publicación 3", key="link_publicacion_3")
+    st.text_input("Link publicación 4", key="link_publicacion_4")
+    st.text_input("Cantidad vendida", key="cantidad_vendida")
+    st.text_input("Última entrada", key="ultima_entrada")
+    st.text_input("Última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (atributos, comisión y promoción -30%)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     nombre_ml = st.session_state.get("nombre_producto", "")
@@ -259,35 +263,30 @@ with tabs[4]:
         st.session_state.ml_cat_id = ""
         st.session_state.ml_cat_name = ""
 
-    # Detectar categoría ML si cambia el nombre del producto
     cat_detected, cat_name = "", ""
     if nombre_ml:
         try:
             cats = ml_api.suggest_categories(nombre_ml)
             if cats:
                 cat_detected, cat_name = cats[0]
-        except Exception as e:
+        except Exception:
             cat_detected, cat_name = "", ""
 
-    # Guardar categoría detectada en session_state (solo si cambia)
     if cat_detected and cat_detected != st.session_state.get("ml_cat_id", ""):
         st.session_state["ml_cat_id"] = cat_detected
         st.session_state["ml_cat_name"] = cat_name
         st.rerun()
 
-    # Quita el warning de Streamlit: solo key, setea antes el valor
     if "ml_cat_id" not in st.session_state or not st.session_state["ml_cat_id"]:
         st.session_state["ml_cat_id"] = cat_detected
     ml_cat_id = st.text_input("ID categoría ML", key="ml_cat_id", help="Se detecta según el título; edita si prefieres otra")
 
-    # Si editan la categoría manual, refrescar atributos
     if "last_ml_cat_id" not in st.session_state:
         st.session_state["last_ml_cat_id"] = ""
     if ml_cat_id != st.session_state["last_ml_cat_id"]:
         st.session_state["last_ml_cat_id"] = ml_cat_id
         st.session_state["ml_attrs_loaded"] = False
 
-    # Obtener y mostrar atributos ML (TODOS)
     req_attrs = []
     if ml_cat_id and (not st.session_state.get("ml_attrs_loaded", False)):
         try:
@@ -300,42 +299,25 @@ with tabs[4]:
     else:
         req_attrs = st.session_state.get("req_attrs", [])
 
-    # Mostrar todos los atributos aunque no sean obligatorios
     if not req_attrs:
         st.info("No hay atributos para esta categoría, solo debes completar el resto del formulario.")
     else:
-        ml_attr_vals = {}
+        ml_attr_vals = st.session_state.get("ml_attrs", {})
         for attr in req_attrs:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
+            default_val = ml_attr_vals.get(aid,"")
             if vtype in ("boolean"):
                 opt = ["Sí", "No"]
-                ml_attr_vals[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}_edit")
+                ml_attr_vals[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}_edit", index=opt.index(default_val) if default_val in opt else 0)
             elif vtype in ("list",):
-                opt = [v["name"] for v in attr.get("values", [])]
-                ml_attr_vals[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}_edit")
+                opts = [v["name"] for v in attr.get("values",[])]
+                idx_def = opts.index(default_val) if default_val in opts else 0
+                ml_attr_vals[aid] = st.selectbox(nombre, opts if opts else ["-"], key=f"ml_{aid}_edit", index=idx_def)
             else:
-                ml_attr_vals[aid] = st.text_input(nombre, key=f"ml_{aid}_edit")
-
+                ml_attr_vals[aid] = st.text_input(nombre, value=default_val, key=f"ml_{aid}_edit")
         st.session_state["ml_attrs"] = ml_attr_vals
-
-    # Botón de PROMOCIÓN -30% solo si ya tiene ID de publicación (y no está aplicado)
-    id_pub = st.session_state.get("id_publicacion_mercado_libre")
-    en_promo = st.session_state.get("en_promocion", False)
-    if id_pub and not en_promo:
-        if st.button("Aplicar promoción -30%", key="btn_promo_edit", help="Aplica precio, comisión y envío para el 30% OFF"):
-            precio_ml = float(st.session_state.get("precio_mercado_libre", 0))
-            precio_ml_desc = round(precio_ml * 0.7, 2)
-            comision_ml = float(st.session_state.get("comision_mercado_libre", 0))
-            envio_ml = float(st.session_state.get("envio_mercado_libre", 0))
-            st.session_state["precio_mercado_libre_30_desc"] = precio_ml_desc
-            st.session_state["comision_mercado_libre_30_desc"] = comision_ml
-            st.session_state["envio_mercado_libre_30_desc"] = envio_ml
-            st.session_state["en_promocion"] = True
-            st.success("¡Promoción -30% aplicada con éxito!")
-    elif id_pub and en_promo:
-        st.button("Promoción ya aplicada", disabled=True, key="btn_promo_applied_edit")
 
 # --- Diccionario FINAL de producto ---
 nuevos = {
@@ -355,12 +337,12 @@ nuevos = {
     "comision_vendedor_facebook": limpiar_valor(st.session_state.get("comision_vendedor_facebook")),
     "ganancia_facebook": str(ganancia_fb) if "ganancia_fb" in locals() and ganancia_fb is not None else "",
     "precio_mercado_libre": limpiar_valor(st.session_state.get("precio_mercado_libre")),
-    "comision_mercado_libre": limpiar_valor(st.session_state.get("comision_mercado_libre")),
+    "comision_mercado_libre": str(comision_ml) if "comision_ml" in locals() else "",
     "envio_mercado_libre": limpiar_valor(st.session_state.get("envio_mercado_libre")),
     "ganancia_mercado_libre": str(ganancia_ml_estimada) if "ganancia_ml_estimada" in locals() and ganancia_ml_estimada is not None else "",
     "ganancia_mercado_libre_iva": f"{ganancia_ml_neta:.0f}" if "ganancia_ml_neta" in locals() and ganancia_ml_neta is not None else "",
     "precio_mercado_libre_30_desc": f"{precio_ml_desc:.0f}" if "precio_ml_desc" in locals() else "",
-    "comision_mercado_libre_30_desc": limpiar_valor(st.session_state.get("comision_mercado_libre_30_desc")),
+    "comision_mercado_libre_30_desc": str(comision_ml_desc) if "comision_ml_desc" in locals() else "",
     "envio_mercado_libre_30_desc": limpiar_valor(st.session_state.get("envio_mercado_libre_30_desc")),
     "ganancia_mercado_libre_30_desc": str(ganancia_ml_desc_estimada) if "ganancia_ml_desc_estimada" in locals() and ganancia_ml_desc_estimada is not None else "",
     "ganancia_mercado_libre_iva_30_desc": f"{ganancia_ml_desc_neta:.0f}" if "ganancia_ml_desc_neta" in locals() and ganancia_ml_desc_neta is not None else "",
@@ -378,10 +360,8 @@ nuevos = {
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
     "ml_cat_id": limpiar_valor(st.session_state.get("ml_cat_id")),
     "ml_attrs": st.session_state.get("ml_attrs"),
-    "en_promocion": st.session_state.get("en_promocion", False),
 }
 
-# --- BOTÓN ACTUALIZAR ---
 if st.button("💾 Actualizar Producto"):
     try:
         nuevos_limpios = filtrar_campos(nuevos)
@@ -395,27 +375,5 @@ if st.button("💾 Actualizar Producto"):
             st.rerun()
     except Exception as e:
         st.error(f"❌ Error actualizando producto: {e}")
-
-# --- BOTÓN ELIMINAR PRODUCTO (Solo admins) ---
-if rol_usuario == "admin":
-    st.markdown("---")
-    if st.button("🗑️ Eliminar producto", type="secondary"):
-        st.session_state.confirmar_eliminar = True
-
-    if st.session_state.get("confirmar_eliminar", False):
-        st.warning("¿Seguro que quieres eliminar este producto? Esta acción es irreversible.")
-        col_confirm, col_cancel = st.columns([1,1])
-        with col_confirm:
-            if st.button("❌ Sí, eliminar definitivamente", key="eliminar_ahora"):
-                try:
-                    db.collection("productos").document(producto_id).delete()
-                    st.success(f"✅ Producto {producto_id} eliminado correctamente.")
-                    st.session_state.confirmar_eliminar = False
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Error eliminando producto: {e}")
-        with col_cancel:
-            if st.button("Cancelar", key="cancelar_eliminar"):
-                st.session_state.confirmar_eliminar = False
 
 st.markdown("</div>", unsafe_allow_html=True)
