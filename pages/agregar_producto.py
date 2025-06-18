@@ -138,7 +138,7 @@ with tabs[2]:
         try:
             precio_fb = float(st.session_state.get("precio_facebook", "0"))
             comision_fb = float(st.session_state.get("comision_vendedor_facebook", "0"))
-            precio_compra = float(st.session_state.get("precio_compra", "0"))
+            precio_compra = to_float(st.session_state.get("precio_compra"))
             ganancia_fb = precio_fb - precio_compra - comision_fb
             color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
