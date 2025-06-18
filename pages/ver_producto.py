@@ -263,6 +263,14 @@ for i, grupo in enumerate(tab_names):
                     continue
                 st.markdown(f"<div class='field-label'>{campo.replace('_',' ').capitalize()}:</div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='ficha-texto'>{valor}</div>", unsafe_allow_html=True)
+# --- Sección MercadoLibre ---
+if producto.get("ml_cat_id"):
+    st.markdown("## MercadoLibre")
+    st.markdown(f"**Categoría ML:** {producto.get('ml_cat_id')}")
+    ml_attrs = producto.get("ml_attrs", {})
+    if ml_attrs:
+        for aid, val in ml_attrs.items():
+            st.markdown(f"**{aid}**: {val}")
         st.markdown('</div>', unsafe_allow_html=True)
 
 if rol == "admin":

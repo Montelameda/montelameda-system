@@ -4,6 +4,7 @@ from login_app import login, esta_autenticado, obtener_rol
 import datetime
 import math
 import time
+import ml_api  # integración MercadoLibre
 
 # --- Autenticación ---
 if not esta_autenticado():
@@ -127,7 +128,7 @@ progreso = int((campos_llenos / len(obligatorios_ids)) * 100)
 st.progress(progreso, text=f"Formulario completado: {progreso}%")
 
 # --- SECCIÓN TABS ---
-tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones"])
+tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones", "🛒 MercadoLibre"])
 
 # TAB 1: Identificación
 with tabs[0]:
@@ -349,3 +350,28 @@ if rol_usuario == "admin":
                 st.session_state.confirmar_eliminar = False
 
 st.markdown("</div>", unsafe_allow_html=True)
+# TAB extra: MercadoLibre
+with tabs[-1]:  # último tab
+    st.subheader("Atributos MercadoLibre")
+    ml_cat_id = st.text_input("ID categoría ML", value=st.session_state.get("ml_cat_id",""), key="ml_cat_id")
+    req_attrs = []
+    if ml_cat_id:
+        try:
+            req_attrs = ml_api.get_required_attrs(ml_cat_id)
+        except Exception as e:
+            st.warning(f"No se pudieron obtener atributos: {e}")
+    ml_attr_vals = st.session_state.get("ml_attrs", {})
+    for attr in req_attrs:
+        aid = attr["id"]; name = attr["name"]
+        vtype = attr["value_type"]
+        default_val = ml_attr_vals.get(aid,"")
+        if vtype in ("boolean"):
+            opt = ["Sí", "No"]
+            ml_attr_vals[aid] = st.selectbox(name, opt, key=f"ml_{aid}_edit", index=opt.index(default_val) if default_val in opt else 0)
+        elif vtype in ("list",):
+            opts = [v["name"] for v in attr.get("values",[])]
+            idx_def = opts.index(default_val) if default_val in opts else 0
+            ml_attr_vals[aid] = st.selectbox(name, opts if opts else ["-"], key=f"ml_{aid}_edit", index=idx_def)
+        else:
+            ml_attr_vals[aid] = st.text_input(name, value=default_val, key=f"ml_{aid}_edit")
+    st.session_state["ml_attrs"] = ml_attr_vals

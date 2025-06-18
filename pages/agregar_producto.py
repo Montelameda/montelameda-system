@@ -3,6 +3,7 @@ import firebase_config
 from login_app import login, esta_autenticado, obtener_rol
 import datetime
 import math
+import ml_api  # integración MercadoLibre
 
 # --- Autenticación ---
 if not esta_autenticado():
@@ -70,7 +71,7 @@ progreso = int((campos_llenos / len(obligatorios_ids)) * 100)
 st.progress(progreso, text=f"Formulario completado: {progreso}%")
 
 # --- SECCIÓN TABS ---
-tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones"])
+tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones", "🛒 MercadoLibre"])
 
 # TAB 1: Identificación
 with tabs[0]:
@@ -201,6 +202,44 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
+# TAB 5: MercadoLibre
+with tabs[4]:
+    st.subheader("Atributos MercadoLibre")
+    # Paso 1: Detectar categoría por título
+    nombre_ml = st.session_state.get("nombre_producto", "")
+    if nombre_ml:
+        try:
+            cat_detected = ml_api.predict_category(nombre_ml)
+        except Exception as e:
+            cat_detected = ""
+    else:
+        cat_detected = ""
+    cat_default = st.session_state.get("ml_cat_id", cat_detected or "")
+    ml_cat_id = st.text_input("ID categoría ML", value=cat_default, key="ml_cat_id", help="Se detecta según el título; edita si prefieres otra")
+
+    # Obtener atributos requeridos
+    req_attrs = []
+    if ml_cat_id:
+        try:
+            req_attrs = ml_api.get_required_attrs(ml_cat_id)
+        except Exception as e:
+            st.warning(f"No se pudieron obtener atributos: {e}")
+    ml_attr_vals = {}
+    for attr in req_attrs:
+        aid = attr["id"]
+        nombre = attr["name"]
+        vtype = attr["value_type"]
+        if vtype in ("boolean"):
+            opt = ["Sí", "No"]
+            ml_attr_vals[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
+        elif vtype in ("list",):
+            opt = [v["name"] for v in attr.get("values", [])]
+            ml_attr_vals[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
+        else:
+            ml_attr_vals[aid] = st.text_input(nombre, key=f"ml_{aid}")
+
+    # Persistir en session_state
+    st.session_state["ml_attrs"] = ml_attr_vals
 # --- Diccionario FINAL de producto (38 columnas) ---
 nuevo = {
     "id": st.session_state.nuevo_id,
@@ -241,6 +280,8 @@ nuevo = {
     "cantidad_vendida": limpiar_valor(st.session_state.get("cantidad_vendida")),
     "ultima_entrada": limpiar_valor(st.session_state.get("ultima_entrada")),
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
+    "ml_cat_id": limpiar_valor(st.session_state.get("ml_cat_id")),
+    "ml_attrs": st.session_state.get("ml_attrs"),
 }
 
 # --- BOTÓN GUARDAR ---
