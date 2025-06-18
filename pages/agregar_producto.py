@@ -3,8 +3,17 @@ import firebase_config
 from login_app import login, esta_autenticado, obtener_rol
 import datetime
 import math
-import requests
-import ml_api
+
+import ml_api  # integración MercadoLibre
+
+# === TABLA DE COMISIONES Y COSTO FIJO ML POR CATEGORÍA (ajusta según tus datos reales) ===
+COMISIONES_ML = {
+    # cat_id : (porcentaje, costo_fijo)
+    "MLC12345": (0.13, 700),  # Ejemplo: 13%, $700 por venta
+    "MLC54321": (0.17, 2500), # Ejemplo: 17%, $2500 por venta
+    # Agrega tus categorías reales aquí
+}
+DEFAULT_COMISION = (0.13, 700)  # Por si la categoría no está mapeada
 
 # --- Autenticación ---
 if not esta_autenticado():
@@ -39,20 +48,6 @@ def limpiar_valor(valor):
 def filtrar_campos(diccionario):
     return {k: v for k, v in diccionario.items() if k and v not in [None, ""]}
 
-# --- Consulta comisión y envío ML en tiempo real ---
-def obtener_comision_envio_ml(precio, categoria_id):
-    if not precio or not categoria_id:
-        return 0, 0
-    url = f"https://api.mercadolibre.com/sites/MLC/listing_prices?price={precio}&category_id={categoria_id}"
-    try:
-        resp = requests.get(url, timeout=8).json()
-        fee_info = next((f for f in resp if f['listing_type_id'] == 'gold_pro'), resp[0])
-        comision = fee_info['sale_fee_amount']
-        envio = fee_info.get('shipping_cost', 0)
-        return comision, envio
-    except Exception:
-        return 0, 0
-
 st.markdown("""
 <style>
 body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
@@ -64,8 +59,8 @@ body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 .valor-negativo { color: #f12b2b; font-weight: bold; font-size: 1.3em; }
 .valor-iva { color: #0e7ae6; font-weight: bold; }
 .resaltado { background: #e8ffe8; border-radius: 6px; padding: 2px 10px; display: inline-block; margin: 0.3em 0; }
-.promo-btn {background-color:#1e78fa;color:#fff;padding:7px 18px;font-weight:700;border:none;border-radius:9px;font-size:1.11rem;}
-.promo-btn-applied {background-color:#97caff;color:#234;font-weight:700;padding:7px 18px;border:none;border-radius:9px;font-size:1.11rem;}
+.ml-comision-detalle { color:#205ec5; font-size:0.99em; margin-top:2px; font-weight:600; }
+.ml-categoria { color:#555; font-size:1.05em; margin-bottom:8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -152,32 +147,44 @@ with tabs[2]:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_fb = None
 
-    # --- Mercado Libre (TIEMPO REAL) ---
+    # --- Mercado Libre ---
     with col_ml:
         st.markdown("🛒 <b>Mercado Libre</b>", unsafe_allow_html=True)
-        precio_ml = st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
-        ml_cat_id = st.session_state.get("ml_cat_id", "")
-        comision_ml, envio_ml = 0, 0
 
-        # --- Cálculo automático en tiempo real (al cambiar precio o categoría) ---
-        if precio_ml and ml_cat_id:
+        precio_ml = st.text_input("Precio para ML", key="precio_mercado_libre", value="")
+        precio_ml = float(precio_ml) if precio_ml else 0
+        # === Detectar categoría ML y aplicar comisión ===
+        nombre_ml = st.session_state.get("nombre_producto", "")
+        cat_detected, cat_name = "", ""
+        if nombre_ml:
             try:
-                comision_ml, envio_ml = obtener_comision_envio_ml(float(precio_ml), ml_cat_id)
-            except:
-                comision_ml, envio_ml = 0, 0
-        # Guarda siempre en session_state para que se sincronicen en la edición
-        st.session_state["comision_mercado_libre"] = str(comision_ml)
-        st.session_state["envio_mercado_libre"] = str(envio_ml)
+                cats = ml_api.suggest_categories(nombre_ml)
+                if cats:
+                    cat_detected, cat_name = cats[0]
+            except Exception:
+                pass
+        if not cat_detected:
+            cat_detected = st.session_state.get("ml_cat_id", "")
+        if cat_detected:
+            st.session_state["ml_cat_id"] = cat_detected
+            st.session_state["ml_cat_name"] = cat_name
 
+        # Mostrar categoría detectada y comisión
+        comision_porcentaje, costo_fijo = COMISIONES_ML.get(cat_detected, DEFAULT_COMISION)
+        st.markdown(f"<div class='ml-categoria'><b>Categoría ML detectada:</b> {cat_detected} - {cat_name if cat_name else ''}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='ml-comision-detalle'>Comisión MercadoLibre: <b>{int(comision_porcentaje*100)}%</b> + ${costo_fijo} fijo</div>", unsafe_allow_html=True)
+
+        # Cálculo automático comisión ML
+        comision_ml = int(precio_ml * comision_porcentaje) + costo_fijo if precio_ml > 0 else 0
         st.text_input("Comisión", value=str(comision_ml), key="comision_mercado_libre", disabled=True)
-        st.text_input("Envío", value=str(envio_ml), key="envio_mercado_libre", disabled=True)
-
+        envio_ml = st.text_input("Envío", placeholder="Costo de envío", key="envio_mercado_libre", value="0")
+        envio_ml = float(envio_ml) if envio_ml else 0
+        precio_compra = float(st.session_state.get("precio_compra", "0"))
         try:
-            precio_compra = float(st.session_state.get("precio_compra", "0"))
-            ganancia_ml_estimada = float(precio_ml) - precio_compra - float(comision_ml) - float(envio_ml)
+            ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - envio_ml
             color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml}'>✅ {ganancia_ml_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta = float(precio_ml) - float(comision_ml) - float(envio_ml)
+            ganancia_bruta = precio_ml - comision_ml - envio_ml
             iva_19 = ganancia_bruta * 0.19
             ganancia_ml_neta = ganancia_bruta - iva_19 - precio_compra
             st.markdown(f"<span class='valor-iva'>🟩 Ganancia de ML descontando IVA 19%: {ganancia_ml_neta:.0f} CLP</span>", unsafe_allow_html=True)
@@ -189,20 +196,14 @@ with tabs[2]:
     # --- ML con 30% desc. ---
     with col_ml30:
         st.markdown("📉 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
+        precio_ml_desc = precio_ml - (precio_ml * 0.3)
+        st.text_input("Precio", value=f"{precio_ml_desc:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
+        # Cálculo automático comisión ML para precio con 30% desc.
+        comision_ml_desc = int(precio_ml_desc * comision_porcentaje) + costo_fijo if precio_ml_desc > 0 else 0
+        st.text_input("Comisión", value=str(comision_ml_desc), key="comision_mercado_libre_30_desc", disabled=True)
+        envio_ml_desc = st.text_input("Envío", value=envio_ml, key="envio_mercado_libre_30_desc")
+        envio_ml_desc = float(envio_ml_desc) if envio_ml_desc else 0
         try:
-            precio_ml = float(st.session_state.get("precio_mercado_libre", "0"))
-            precio_ml_desc = precio_ml - (precio_ml * 0.3)
-            st.text_input("Precio", value=f"{precio_ml_desc:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
-        except:
-            st.text_input("Precio", value="", key="precio_mercado_libre_30_desc", disabled=True)
-        # Comisión y envío se copian de la normal (no se recalculan)
-        st.text_input("Comisión", value=st.session_state.get("comision_mercado_libre", "0"), key="comision_mercado_libre_30_desc", disabled=True)
-        st.text_input("Envío", value=st.session_state.get("envio_mercado_libre", "0"), key="envio_mercado_libre_30_desc", disabled=True)
-        try:
-            precio_ml_desc = float(st.session_state.get("precio_mercado_libre_30_desc", "0"))
-            comision_ml_desc = float(st.session_state.get("comision_mercado_libre_30_desc", "0"))
-            envio_ml_desc = float(st.session_state.get("envio_mercado_libre_30_desc", "0"))
-            precio_compra = float(st.session_state.get("precio_compra", "0"))
             ganancia_ml_desc_estimada = precio_ml_desc - precio_compra - comision_ml_desc - envio_ml_desc
             color_ml_desc = "valor-positivo" if ganancia_ml_desc_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml_desc}'>✅ {ganancia_ml_desc_estimada:.0f} CLP</span>", unsafe_allow_html=True)
