@@ -6,6 +6,7 @@ from login_app import login, esta_autenticado, obtener_rol
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "modulos"))
 import firebase_config
+import ml_api  # <-- IMPORTANTE para MercadoLibre
 
 # --- Autenticación ---
 if not esta_autenticado():
@@ -263,15 +264,35 @@ for i, grupo in enumerate(tab_names):
                     continue
                 st.markdown(f"<div class='field-label'>{campo.replace('_',' ').capitalize()}:</div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='ficha-texto'>{valor}</div>", unsafe_allow_html=True)
-# --- Sección MercadoLibre ---
+
+# --- Sección MercadoLibre (con nombres bonitos de atributos ML) ---
 if producto.get("ml_cat_id"):
     st.markdown("## MercadoLibre")
     st.markdown(f"**Categoría ML:** {producto.get('ml_cat_id')}")
     ml_attrs = producto.get("ml_attrs", {})
+    cat_id = producto.get("ml_cat_id", "")
+    nombres_ml = {}  # Mapeo de id -> nombre legible
+
+    # Obtener todos los atributos para esa categoría
+    if cat_id:
+        try:
+            attrs_ml = ml_api.get_all_attrs(cat_id)
+            nombres_ml = {a["id"]: a["name"] for a in attrs_ml}
+        except Exception as e:
+            st.warning(f"No se pudieron cargar los nombres de atributos ML: {e}")
+
     if ml_attrs:
+        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#205ec5;font-weight:800;'>Atributos MercadoLibre</h4>", unsafe_allow_html=True)
         for aid, val in ml_attrs.items():
-            st.markdown(f"**{aid}**: {val}")
-        st.markdown('</div>', unsafe_allow_html=True)
+            nombre = nombres_ml.get(aid, aid)
+            st.markdown(
+                f"<div style='margin-bottom:7px;'><span style='font-weight:700;color:#205ec5'>{nombre}:</span> <span style='color:#36414b;font-size:1.08rem'>{val}</span></div>",
+                unsafe_allow_html=True
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.info("No hay atributos de MercadoLibre para este producto.")
 
 if rol == "admin":
     st.caption(f"ID de Firebase: {producto_id}")
