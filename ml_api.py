@@ -1,7 +1,7 @@
 # ml_api.py  – Utilidades MercadoLibre
 # -------------------------------------
 # · suggest_categories()  → [(category_id, nombre)]
-# · get_required_attrs()  → lista de atributos obligatorios
+# · get_all_attrs()  → lista de TODOS los atributos de la categoría
 # Usa caché local en .ml_cache/ para no reventar la API.
 
 import requests
@@ -13,7 +13,6 @@ import urllib.parse
 CACHE_TTL_HRS = 24          # refrescamos cada 24 h
 CACHE_DIR = pathlib.Path(".ml_cache")
 CACHE_DIR.mkdir(exist_ok=True)
-
 
 # ---------- helper de caché ----------
 def _cached(fp: pathlib.Path):
@@ -28,7 +27,6 @@ def _cached(fp: pathlib.Path):
         return json.loads(fp.read_text())
     except json.JSONDecodeError:
         return None
-
 
 # ---------- AUTOCOMPLETAR CATEGORÍAS ----------
 def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
@@ -66,12 +64,10 @@ def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
 
     return out
 
-
-# ---------- CAMPOS OBLIGATORIOS ----------
-def get_required_attrs(cat_id: str):
+# ---------- TODOS LOS ATRIBUTOS DE LA CATEGORÍA ----------
+def get_all_attrs(cat_id: str):
     """
-    Devuelve los atributos con tags.required == True para la categoría.
-    Si la API exhala dict de error o no es lista, devolvemos [].
+    Devuelve TODOS los atributos de la categoría (no solo los obligatorios).
     """
     if not cat_id:
         return []
@@ -87,8 +83,7 @@ def get_required_attrs(cat_id: str):
         except requests.exceptions.RequestException:
             return []
 
-    # A veces MercadoLibre responde con {"message": "Forbidden"} (dict) → evitamos crash
     if not isinstance(data, list):
         return []
 
-    return [a for a in data if a.get("tags", {}).get("required")]
+    return data  # <-- Devuelve todos los atributos, sin filtrar
