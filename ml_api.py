@@ -1,49 +1,42 @@
-import requests, json, pathlib, datetime, os
+import requests, json, pathlib, datetime, urllib.parse
 
-CACHE_DIR = pathlib.Path(os.getenv("ML_CACHE_DIR", ".ml_cache"))
-CACHE_DIR.mkdir(exist_ok=True, parents=True)
-CACHE_TTL_SECONDS = int(os.getenv("ML_CACHE_TTL", 24*3600))
+CACHE_TTL_HRS = 24
+CACHE_DIR = pathlib.Path(".ml_cache"); CACHE_DIR.mkdir(exist_ok=True)
 
-def _read_cache(fname):
-    fpath = CACHE_DIR / fname
-    if not fpath.exists():
-        return None
-    age = datetime.datetime.now().timestamp() - fpath.stat().st_mtime
-    if age > CACHE_TTL_SECONDS:
-        return None
-    try:
-        return json.loads(fpath.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+def _cached(fp):
+    if not fp.exists(): return None
+    age = (datetime.datetime.now() - datetime.datetime.fromtimestamp(fp.stat().st_mtime)).total_seconds()
+    if age > CACHE_TTL_HRS * 3600: return None
+    return json.loads(fp.read_text())
 
-def _write_cache(fname, data):
-    (CACHE_DIR / fname).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+# ----------  AUTOCOMPLETAR CATEGORÍAS ----------
+def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
+    """Devuelve lista [(cat_id, display_name)] ordenada por relevancia."""
+    if not title.strip(): return []
+    q = urllib.parse.quote(title.strip())
+    url = f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search?limit={limit}&q={q}"
+    data = requests.get(url, timeout=10).json()
+    out = []
+    for item in data:
+        cid = item["category_id"]
+        # Intentamos sacar path completo para que el usuario lo entienda
+        cache = _cached(CACHE_DIR / f"path_{cid}.json")
+        if not cache:
+            path = requests.get(f"https://api.mercadolibre.com/categories/{cid}", timeout=10).json()["path_from_root"]
+            CACHE_DIR.joinpath(f"path_{cid}.json").write_text(json.dumps(path, ensure_ascii=False))
+        else:
+            path = cache
+        name = " › ".join(n["name"] for n in path)
+        out.append((cid, name))
+    return out
 
-def predict_category(title: str, site="MLC"):
-    """Devuelve el category_id más probable según el título"""
-    if not title:
-        return ""
-    url = f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search"
-    params = {"limit": 1, "q": title}
-    r = requests.get(url, params=params, timeout=10)
-    r.raise_for_status()
-    data = r.json()
-    if not data:
-        return ""
-    return data[0].get("category_id", "")
-
+# ----------  CAMPOS OBLIGATORIOS ----------
 def get_required_attrs(cat_id: str):
-    """Retorna lista de atributos obligatorios para una categoría"""
-    if not cat_id:
-        return []
-    cache_fname = f"{cat_id}.json"
-    cached = _read_cache(cache_fname)
-    if cached is not None:
-        attrs = cached
-    else:
+    if not cat_id: return []
+    fp = CACHE_DIR / f"attrs_{cat_id}.json"
+    data = _cached(fp)
+    if not data:
         url = f"https://api.mercadolibre.com/categories/{cat_id}/attributes"
-        r = requests.get(url, timeout=10)
-        r.raise_for_status()
-        attrs = r.json()
-        _write_cache(cache_fname, attrs)
-    return [a for a in attrs if a.get("tags", {}).get("required") is True]
+        data = requests.get(url, timeout=10).json()
+        fp.write_text(json.dumps(data, ensure_ascii=False))
+    return [a for a in data if a.get("tags", {}).get("required")]
