@@ -11,7 +11,10 @@ if not esta_autenticado():
     login()
     st.stop()
 
-rol_usuario = obtener_rol()  # "admin" o "vendedor"
+rol_usuario = obtener_rol()
+if rol_usuario != "admin":
+    st.error("Acceso solo para administradores.")
+    st.stop()
 
 st.set_page_config(page_title="Editar Producto", layout="wide")
 
@@ -25,11 +28,6 @@ if "producto_actual" in st.session_state:
 producto_id = st.session_state.get("producto_actual")
 if not producto_id:
     st.error("❌ No se proporcionó un ID de producto válido.")
-    st.stop()
-
-rol_usuario = obtener_rol()
-if rol_usuario != "admin":
-    st.error("Acceso solo para administradores.")
     st.stop()
 
 # --- Obtener datos del producto existente ---
@@ -61,7 +59,6 @@ def limpiar_valor(valor):
 def filtrar_campos(diccionario):
     return {k: v for k, v in diccionario.items() if k and v not in [None, ""]}
 
-# --- Custom CSS ---
 st.markdown("""
 <style>
 body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
@@ -77,8 +74,6 @@ body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 """, unsafe_allow_html=True)
 
 st.markdown("<div class='container'>", unsafe_allow_html=True)
-
-# --- TÍTULO ---
 st.markdown("<h1 style='text-align: center;'>✏️ Editar producto</h1>", unsafe_allow_html=True)
 st.markdown(f"<h3 style='text-align: center; color: #205ec5;'>🆔 ID producto: {a_str(producto.get('id',''))}</h3>", unsafe_allow_html=True)
 
@@ -90,37 +85,20 @@ obligatorios_ids = [
 
 # --- Precarga datos SOLO la primera vez por producto ---
 if "form_precargado" not in st.session_state:
-    st.session_state.codigo_barra = a_str(producto.get("codigo_barra", ""))
-    st.session_state.codigo_minimo = a_str(producto.get("codigo_minimo", ""))
-    st.session_state.proveedor = a_str(producto.get("proveedor", ""))
-    st.session_state.nombre_producto = a_str(producto.get("nombre_producto", ""))
-    st.session_state.categoria = a_str(producto.get("categoria", ""))
-    st.session_state.marca = a_str(producto.get("marca", ""))
-    st.session_state.descripcion = a_str(producto.get("descripcion", ""))
-    st.session_state.estado = a_str(producto.get("estado", ""))
-    st.session_state.imagen_principal_url = a_str(producto.get("imagen_principal_url", ""))
-    st.session_state.imagenes_secundarias_url = a_str(producto.get("imagenes_secundarias_url", ""))
-    st.session_state.etiquetas = a_str(producto.get("etiquetas", ""))
-    st.session_state.foto_proveedor = a_str(producto.get("foto_proveedor", ""))
-    st.session_state.precio_compra = a_str(producto.get("precio_compra", ""))
-    st.session_state.precio_facebook = a_str(producto.get("precio_facebook", ""))
-    st.session_state.comision_vendedor_facebook = a_str(producto.get("comision_vendedor_facebook", ""))
-    st.session_state.precio_mayor_3 = a_str(producto.get("precio_mayor_3", ""))
-    st.session_state.precio_mercado_libre = a_str(producto.get("precio_mercado_libre", ""))
-    st.session_state.comision_mercado_libre = a_str(producto.get("comision_mercado_libre", ""))
-    st.session_state.envio_mercado_libre = a_str(producto.get("envio_mercado_libre", ""))
-    st.session_state.comision_mercado_libre_30_desc = a_str(producto.get("comision_mercado_libre_30_desc", ""))
-    st.session_state.envio_mercado_libre_30_desc = a_str(producto.get("envio_mercado_libre_30_desc", ""))
-    st.session_state.stock = a_str(producto.get("stock", ""))
-    st.session_state.mostrar_catalogo = a_str(producto.get("mostrar_catalogo", ""))
-    st.session_state.id_publicacion_mercado_libre = a_str(producto.get("id_publicacion_mercado_libre", ""))
-    st.session_state.link_publicacion_1 = a_str(producto.get("link_publicacion_1", ""))
-    st.session_state.link_publicacion_2 = a_str(producto.get("link_publicacion_2", ""))
-    st.session_state.link_publicacion_3 = a_str(producto.get("link_publicacion_3", ""))
-    st.session_state.link_publicacion_4 = a_str(producto.get("link_publicacion_4", ""))
-    st.session_state.cantidad_vendida = a_str(producto.get("cantidad_vendida", ""))
-    st.session_state.ultima_entrada = a_str(producto.get("ultima_entrada", ""))
-    st.session_state.ultima_salida = a_str(producto.get("ultima_salida", ""))
+    for campo in [
+        "codigo_barra", "codigo_minimo", "proveedor", "nombre_producto", "categoria", "marca",
+        "descripcion", "estado", "imagen_principal_url", "imagenes_secundarias_url",
+        "etiquetas", "foto_proveedor", "precio_compra", "precio_facebook",
+        "comision_vendedor_facebook", "precio_mayor_3", "precio_mercado_libre",
+        "comision_mercado_libre", "envio_mercado_libre", "comision_mercado_libre_30_desc",
+        "envio_mercado_libre_30_desc", "stock", "mostrar_catalogo", "id_publicacion_mercado_libre",
+        "link_publicacion_1", "link_publicacion_2", "link_publicacion_3", "link_publicacion_4",
+        "cantidad_vendida", "ultima_entrada", "ultima_salida"
+    ]:
+        st.session_state[campo] = a_str(producto.get(campo, ""))
+    # ML específico
+    st.session_state.ml_cat_id = a_str(producto.get("ml_cat_id", ""))
+    st.session_state.ml_attrs = producto.get("ml_attrs", {})
     st.session_state.form_precargado = True
 
 campos_llenos = sum(1 for k in obligatorios_ids if st.session_state.get(k))
@@ -128,7 +106,10 @@ progreso = int((campos_llenos / len(obligatorios_ids)) * 100)
 st.progress(progreso, text=f"Formulario completado: {progreso}%")
 
 # --- SECCIÓN TABS ---
-tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones", "🛒 MercadoLibre"])
+tabs = st.tabs([
+    "🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios",
+    "📦 Stock y Opciones", "🛒 MercadoLibre"
+])
 
 # TAB 1: Identificación
 with tabs[0]:
@@ -259,6 +240,33 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
+# TAB 5: MercadoLibre EDIT dinámico
+with tabs[4]:
+    st.subheader("Atributos MercadoLibre")
+    ml_cat_id = st.text_input("ID categoría ML", value=st.session_state.get("ml_cat_id",""), key="ml_cat_id")
+    req_attrs = []
+    if ml_cat_id:
+        try:
+            req_attrs = ml_api.get_all_attrs(ml_cat_id)  # <-- ahora TODOS los atributos
+        except Exception as e:
+            st.warning(f"No se pudieron obtener atributos: {e}")
+    ml_attr_vals = st.session_state.get("ml_attrs", {}) or {}
+    for attr in req_attrs:
+        aid = attr["id"]; name = attr["name"]
+        vtype = attr["value_type"]
+        default_val = ml_attr_vals.get(aid,"")
+        if vtype == "boolean":
+            opt = ["Sí", "No"]
+            idx = opt.index(default_val) if default_val in opt else 0
+            ml_attr_vals[aid] = st.selectbox(name, opt, key=f"ml_{aid}_edit", index=idx)
+        elif vtype == "list":
+            opts = [v["name"] for v in attr.get("values",[])]
+            idx = opts.index(default_val) if default_val in opts else 0
+            ml_attr_vals[aid] = st.selectbox(name, opts if opts else ["-"], key=f"ml_{aid}_edit", index=idx)
+        else:
+            ml_attr_vals[aid] = st.text_input(name, value=default_val, key=f"ml_{aid}_edit")
+    st.session_state["ml_attrs"] = ml_attr_vals
+
 # --- BOTÓN ACTUALIZAR ---
 nuevos = {
     "codigo_barra": limpiar_valor(st.session_state.get("codigo_barra")),
@@ -298,6 +306,8 @@ nuevos = {
     "cantidad_vendida": limpiar_valor(st.session_state.get("cantidad_vendida")),
     "ultima_entrada": limpiar_valor(st.session_state.get("ultima_entrada")),
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
+    "ml_cat_id": limpiar_valor(st.session_state.get("ml_cat_id")),
+    "ml_attrs": st.session_state.get("ml_attrs"),
 }
 
 if st.button("💾 Actualizar Producto"):
@@ -316,16 +326,6 @@ if st.button("💾 Actualizar Producto"):
                 st.error(f"❌ Error actualizando producto: {e}")
     except Exception as e:
         st.error(f"❌ Error actualizando producto: {e}")
-
-# --- BOTÓN DEBUG: UPDATE CAMPO POR CAMPO ---
-if st.button("🔍 Test update campo por campo (debug)"):
-    nuevos_limpios = filtrar_campos(nuevos)
-    for k, v in nuevos_limpios.items():
-        try:
-            doc_ref.update({k: v})
-            st.success(f"Campo '{k}' actualizado OK.")
-        except Exception as e:
-            st.error(f"Campo '{k}' falló: {e}")
 
 # --- BOTÓN ELIMINAR PRODUCTO (Solo admins) ---
 if rol_usuario == "admin":
@@ -350,28 +350,3 @@ if rol_usuario == "admin":
                 st.session_state.confirmar_eliminar = False
 
 st.markdown("</div>", unsafe_allow_html=True)
-# TAB extra: MercadoLibre
-with tabs[-1]:  # último tab
-    st.subheader("Atributos MercadoLibre")
-    ml_cat_id = st.text_input("ID categoría ML", value=st.session_state.get("ml_cat_id",""), key="ml_cat_id")
-    req_attrs = []
-    if ml_cat_id:
-        try:
-            req_attrs = ml_api.get_required_attrs(ml_cat_id)
-        except Exception as e:
-            st.warning(f"No se pudieron obtener atributos: {e}")
-    ml_attr_vals = st.session_state.get("ml_attrs", {})
-    for attr in req_attrs:
-        aid = attr["id"]; name = attr["name"]
-        vtype = attr["value_type"]
-        default_val = ml_attr_vals.get(aid,"")
-        if vtype in ("boolean"):
-            opt = ["Sí", "No"]
-            ml_attr_vals[aid] = st.selectbox(name, opt, key=f"ml_{aid}_edit", index=opt.index(default_val) if default_val in opt else 0)
-        elif vtype in ("list",):
-            opts = [v["name"] for v in attr.get("values",[])]
-            idx_def = opts.index(default_val) if default_val in opts else 0
-            ml_attr_vals[aid] = st.selectbox(name, opts if opts else ["-"], key=f"ml_{aid}_edit", index=idx_def)
-        else:
-            ml_attr_vals[aid] = st.text_input(name, value=default_val, key=f"ml_{aid}_edit")
-    st.session_state["ml_attrs"] = ml_attr_vals
