@@ -16,7 +16,6 @@ if rol_usuario != "admin":
     st.stop()
 
 st.set_page_config(page_title="Agregar Producto", layout="wide")
-
 db = firebase_config.db
 
 def a_str(valor):
@@ -56,7 +55,6 @@ body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 st.markdown("<div class='container'>", unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center;'>➕ Agregar producto</h1>", unsafe_allow_html=True)
 
-# --- Genera ID automático simple ---
 if "nuevo_id" not in st.session_state:
     st.session_state.nuevo_id = f"P{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
 
@@ -65,12 +63,11 @@ obligatorios_ids = [
     "codigo_barra", "codigo_minimo", "proveedor", "nombre_producto", "categoria", "marca",
     "descripcion", "estado", "precio_facebook", "comision_vendedor_facebook", "precio_compra"
 ]
-
 campos_llenos = sum(1 for k in obligatorios_ids if st.session_state.get(k))
 progreso = int((campos_llenos / len(obligatorios_ids)) * 100)
 st.progress(progreso, text=f"Formulario completado: {progreso}%")
 
-# --- SECCIÓN TABS ---
+# --- TABS ---
 tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones", "🛒 MercadoLibre"])
 
 # TAB 1: Identificación
@@ -78,7 +75,7 @@ with tabs[0]:
     col1, col2, col3 = st.columns(3)
     with col1:
         st.text_input("Código de barra *", placeholder="Ej: 1234567890", key="codigo_barra")
-        st.text_input("Nombre del producto *", placeholder="Ej: Camiseta deportiva", key="nombre_producto", max_chars=60)
+        nombre_producto = st.text_input("Nombre del producto *", placeholder="Ej: Camiseta deportiva", key="nombre_producto", max_chars=60)
         docs_cat = db.collection("categorias").stream()
         categorias = sorted([a_str(doc.to_dict()["nombre"]) for doc in docs_cat if "nombre" in doc.to_dict()])
         st.selectbox("Categoría *", options=categorias, key="categoria")
@@ -202,28 +199,53 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre
+# TAB 5: MercadoLibre (mejorado: refresca atributos al cambiar nombre/categoría)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
-    # Paso 1: Detectar categoría por título
     nombre_ml = st.session_state.get("nombre_producto", "")
+    if "ml_cat_id" not in st.session_state or st.session_state.get("ml_cat_name") is None:
+        st.session_state.ml_cat_id = ""
+        st.session_state.ml_cat_name = ""
+
+    # Detectar categoría ML si cambia el nombre del producto
+    cat_detected, cat_name = "", ""
     if nombre_ml:
         try:
-            cat_detected = ml_api.predict_category(nombre_ml)
+            cats = ml_api.suggest_categories(nombre_ml)
+            if cats:
+                cat_detected, cat_name = cats[0]
         except Exception as e:
-            cat_detected = ""
-    else:
-        cat_detected = ""
+            cat_detected, cat_name = "", ""
+
+    # Guardar categoría detectada en session_state (solo si cambia)
+    if cat_detected and cat_detected != st.session_state.get("ml_cat_id", ""):
+        st.session_state["ml_cat_id"] = cat_detected
+        st.session_state["ml_cat_name"] = cat_name
+        st.experimental_rerun()  # <-- fuerza recarga para refrescar atributos
+
     cat_default = st.session_state.get("ml_cat_id", cat_detected or "")
     ml_cat_id = st.text_input("ID categoría ML", value=cat_default, key="ml_cat_id", help="Se detecta según el título; edita si prefieres otra")
 
-    # Obtener atributos requeridos
+    # Si editan la categoría manual, refrescar atributos
+    if "last_ml_cat_id" not in st.session_state:
+        st.session_state["last_ml_cat_id"] = ""
+    if ml_cat_id != st.session_state["last_ml_cat_id"]:
+        st.session_state["last_ml_cat_id"] = ml_cat_id
+        st.session_state["ml_attrs_loaded"] = False
+
+    # Obtener y mostrar atributos requeridos ML
     req_attrs = []
-    if ml_cat_id:
+    if ml_cat_id and (not st.session_state.get("ml_attrs_loaded", False)):
         try:
             req_attrs = ml_api.get_required_attrs(ml_cat_id)
+            st.session_state["req_attrs"] = req_attrs
+            st.session_state["ml_attrs_loaded"] = True
         except Exception as e:
             st.warning(f"No se pudieron obtener atributos: {e}")
+            st.session_state["req_attrs"] = []
+    else:
+        req_attrs = st.session_state.get("req_attrs", [])
+
     ml_attr_vals = {}
     for attr in req_attrs:
         aid = attr["id"]
@@ -238,8 +260,8 @@ with tabs[4]:
         else:
             ml_attr_vals[aid] = st.text_input(nombre, key=f"ml_{aid}")
 
-    # Persistir en session_state
     st.session_state["ml_attrs"] = ml_attr_vals
+
 # --- Diccionario FINAL de producto (38 columnas) ---
 nuevo = {
     "id": st.session_state.nuevo_id,
@@ -294,7 +316,6 @@ if st.button("💾 Agregar Producto"):
             db.collection("productos").document(nuevo["id"]).set(nuevo_limpio)
             st.success(f"✅ Producto {nuevo['id']} agregado correctamente.")
             st.balloons()
-            # Solo regenera el ID y recarga la página, NO limpia manualmente el session_state (evita error de Streamlit)
             st.session_state.nuevo_id = f"P{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
             st.rerun()
     except Exception as e:
