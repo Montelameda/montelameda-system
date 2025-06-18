@@ -199,7 +199,7 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (mejorado, muestra TODOS los atributos)
+# TAB 5: MercadoLibre (bloque actualizado con get_all_attrs)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     nombre_ml = st.session_state.get("nombre_producto", "")
@@ -214,7 +214,7 @@ with tabs[4]:
             cats = ml_api.suggest_categories(nombre_ml)
             if cats:
                 cat_detected, cat_name = cats[0]
-        except Exception as e:
+        except Exception:
             cat_detected, cat_name = "", ""
 
     # Guardar categoría detectada en session_state (solo si cambia)
@@ -223,7 +223,6 @@ with tabs[4]:
         st.session_state["ml_cat_name"] = cat_name
         st.rerun()
 
-    # Quita el warning de Streamlit: solo key, setea antes el valor
     if "ml_cat_id" not in st.session_state or not st.session_state["ml_cat_id"]:
         st.session_state["ml_cat_id"] = cat_detected
     ml_cat_id = st.text_input("ID categoría ML", key="ml_cat_id", help="Se detecta según el título; edita si prefieres otra")
@@ -235,7 +234,7 @@ with tabs[4]:
         st.session_state["last_ml_cat_id"] = ml_cat_id
         st.session_state["ml_attrs_loaded"] = False
 
-    # Obtener y mostrar atributos ML (TODOS)
+    # Obtener y mostrar atributos ML (TODOS, usando OAuth)
     req_attrs = []
     if ml_cat_id and (not st.session_state.get("ml_attrs_loaded", False)):
         try:
@@ -257,10 +256,10 @@ with tabs[4]:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
-            if vtype in ("boolean"):
+            if vtype == "boolean":
                 opt = ["Sí", "No"]
                 ml_attr_vals[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
-            elif vtype in ("list",):
+            elif vtype == "list":
                 opt = [v["name"] for v in attr.get("values", [])]
                 ml_attr_vals[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
             else:
