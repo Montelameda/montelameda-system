@@ -1,8 +1,8 @@
-# ml_api.py  – Utilidades Mercado Libre
+# ml_api.py  – Utilidades MercadoLibre
 # -------------------------------------
-# • suggest_categories()  →  [(cat_id, nombre)]
-# • get_required_attrs()  →  lista de atributos obligatorios
-# Incluye caché local en .ml_cache/  para no saturar la API.
+# · suggest_categories()  → [(category_id, nombre)]
+# · get_required_attrs()  → lista de atributos obligatorios
+# Usa caché local en .ml_cache/ para no reventar la API.
 
 import requests
 import json
@@ -10,29 +10,32 @@ import pathlib
 import datetime
 import urllib.parse
 
-CACHE_TTL_HRS = 24
+CACHE_TTL_HRS = 24          # refrescamos cada 24 h
 CACHE_DIR = pathlib.Path(".ml_cache")
 CACHE_DIR.mkdir(exist_ok=True)
 
 
-# ---------- helpers de caché ----------
+# ---------- helper de caché ----------
 def _cached(fp: pathlib.Path):
-    """Devuelve el JSON cacheado o None si no existe / está vencido."""
+    """Devuelve JSON cacheado o None si no existe / expiró / está corrupto."""
     if not fp.exists():
         return None
     age = (datetime.datetime.now() -
            datetime.datetime.fromtimestamp(fp.stat().st_mtime)).total_seconds()
     if age > CACHE_TTL_HRS * 3600:
         return None
-    return json.loads(fp.read_text())
+    try:
+        return json.loads(fp.read_text())
+    except json.JSONDecodeError:
+        return None
 
 
 # ---------- AUTOCOMPLETAR CATEGORÍAS ----------
 def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
     """
-    Devuelve lista de tuplas (category_id, nombre_mostrable) ordenadas por relevancia.
-    Si la API de categorías devuelve 403/429/5xx u omite 'path_from_root',
-    usamos domain_name como fallback para evitar KeyError.
+    Devuelve lista [(cat_id, nombre_mostrable)] ordenada por relevancia.
+    Si /categories/<id> responde 403/429/5xx o sin 'path_from_root',
+    caemos al domain_name para evitar crasheos.
     """
     if not title.strip():
         return []
@@ -50,11 +53,10 @@ def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
     for item in data:
         cid = item["category_id"]
 
-        # Intentamos ruta completa (puede fallar con 403)
+        # Intentamos sacar la ruta completa (puede dar 403 en Streamlit Cloud)
         try:
-            resp = requests.get(
-                f"https://api.mercadolibre.com/categories/{cid}", timeout=10
-            )
+            resp = requests.get(f"https://api.mercadolibre.com/categories/{cid}",
+                                timeout=10)
             path = resp.ok and resp.json().get("path_from_root", [])
             name = " › ".join(n["name"] for n in path) if path else item["domain_name"]
         except requests.exceptions.RequestException:
@@ -69,13 +71,14 @@ def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
 def get_required_attrs(cat_id: str):
     """
     Devuelve los atributos con tags.required == True para la categoría.
-    Cachea la respuesta en .ml_cache/attrs_<cat_id>.json
+    Si la API exhala dict de error o no es lista, devolvemos [].
     """
     if not cat_id:
         return []
 
     fp = CACHE_DIR / f"attrs_{cat_id}.json"
     data = _cached(fp)
+
     if data is None:
         try:
             url = f"https://api.mercadolibre.com/categories/{cat_id}/attributes"
@@ -83,5 +86,9 @@ def get_required_attrs(cat_id: str):
             fp.write_text(json.dumps(data, ensure_ascii=False))
         except requests.exceptions.RequestException:
             return []
+
+    # A veces MercadoLibre responde con {"message": "Forbidden"} (dict) → evitamos crash
+    if not isinstance(data, list):
+        return []
 
     return [a for a in data if a.get("tags", {}).get("required")]
