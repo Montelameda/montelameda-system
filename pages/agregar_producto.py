@@ -221,7 +221,7 @@ with tabs[4]:
     if cat_detected and cat_detected != st.session_state.get("ml_cat_id", ""):
         st.session_state["ml_cat_id"] = cat_detected
         st.session_state["ml_cat_name"] = cat_name
-        st.experimental_rerun()  # <-- fuerza recarga para refrescar atributos
+        st.rerun()  # <-- fuerza recarga para refrescar atributos
 
     cat_default = st.session_state.get("ml_cat_id", cat_detected or "")
     ml_cat_id = st.text_input("ID categoría ML", value=cat_default, key="ml_cat_id", help="Se detecta según el título; edita si prefieres otra")
