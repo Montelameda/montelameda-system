@@ -1,26 +1,54 @@
-# ml_api.py  – Utilidades MercadoLibre
-# -------------------------------------
-# · suggest_categories()  → [(category_id, nombre)]
-# · get_all_attrs()  → lista de TODOS los atributos de la categoría
-# Usa caché local en .ml_cache/ para no reventar la API.
-
+# ml_api.py – Utilidades MercadoLibre OAuth2 (PRO)
+# -------------------------------------------------
 import requests
 import json
 import pathlib
 import datetime
 import urllib.parse
 
-CACHE_TTL_HRS = 24          # refrescamos cada 24 h
+CACHE_TTL_HRS = 24
 CACHE_DIR = pathlib.Path(".ml_cache")
 CACHE_DIR.mkdir(exist_ok=True)
 
-# ---------- helper de caché ----------
+# ==== CONFIGURA TUS CREDENCIALES ====
+ML_CLIENT_ID = "264097672348150"
+ML_CLIENT_SECRET = "oCouItXpao4bYX1GZ0ZTAC16brpqLgkP"
+ML_REFRESH_TOKEN = "TG-68530d69b78f1e0001a8d29e-2227856718"
+
+TOKEN_CACHE = CACHE_DIR / "ml_token.json"
+
+
+# ==== TOKEN HANDLER ====
+def get_ml_token():
+    # Si está cacheado y no expiró, úsalo
+    if TOKEN_CACHE.exists():
+        d = json.loads(TOKEN_CACHE.read_text())
+        if d.get("expires_at", 0) > datetime.datetime.now().timestamp() + 60:
+            return d["access_token"]
+    # Si no, refresca
+    resp = requests.post("https://api.mercadolibre.com/oauth/token", data={
+        "grant_type": "refresh_token",
+        "client_id": ML_CLIENT_ID,
+        "client_secret": ML_CLIENT_SECRET,
+        "refresh_token": ML_REFRESH_TOKEN
+    })
+    if resp.ok:
+        data = resp.json()
+        expires_at = datetime.datetime.now().timestamp() + int(data["expires_in"])
+        TOKEN_CACHE.write_text(json.dumps({
+            "access_token": data["access_token"],
+            "expires_at": expires_at
+        }))
+        return data["access_token"]
+    else:
+        raise RuntimeError(f"Error renovando token ML: {resp.text}")
+
+
+# ==== CACHÉ GENÉRICO ====
 def _cached(fp: pathlib.Path):
-    """Devuelve JSON cacheado o None si no existe / expiró / está corrupto."""
     if not fp.exists():
         return None
-    age = (datetime.datetime.now() -
-           datetime.datetime.fromtimestamp(fp.stat().st_mtime)).total_seconds()
+    age = (datetime.datetime.now() - datetime.datetime.fromtimestamp(fp.stat().st_mtime)).total_seconds()
     if age > CACHE_TTL_HRS * 3600:
         return None
     try:
@@ -28,62 +56,53 @@ def _cached(fp: pathlib.Path):
     except json.JSONDecodeError:
         return None
 
-# ---------- AUTOCOMPLETAR CATEGORÍAS ----------
+
+# ==== AUTOCOMPLETAR CATEGORÍAS ====
 def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
-    """
-    Devuelve lista [(cat_id, nombre_mostrable)] ordenada por relevancia.
-    Si /categories/<id> responde 403/429/5xx o sin 'path_from_root',
-    caemos al domain_name para evitar crasheos.
-    """
     if not title.strip():
         return []
-
     q = urllib.parse.quote(title.strip())
-    url = (f"https://api.mercadolibre.com/sites/{site}"
-           f"/domain_discovery/search?limit={limit}&q={q}")
-
+    url = (f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search?limit={limit}&q={q}")
     try:
         data = requests.get(url, timeout=10).json()
     except requests.exceptions.RequestException:
         return []
-
     out = []
     for item in data:
         cid = item["category_id"]
-
-        # Intentamos sacar la ruta completa (puede dar 403 en Streamlit Cloud)
         try:
-            resp = requests.get(f"https://api.mercadolibre.com/categories/{cid}",
-                                timeout=10)
+            resp = requests.get(f"https://api.mercadolibre.com/categories/{cid}", timeout=10)
             path = resp.ok and resp.json().get("path_from_root", [])
             name = " › ".join(n["name"] for n in path) if path else item["domain_name"]
         except requests.exceptions.RequestException:
             name = item["domain_name"]
-
         out.append((cid, name))
-
     return out
 
-# ---------- TODOS LOS ATRIBUTOS DE LA CATEGORÍA ----------
+
+# ==== CAMPOS DE CATEGORÍA: OBLIGATORIOS + OPCIONALES ====
 def get_all_attrs(cat_id: str):
-    """
-    Devuelve TODOS los atributos de la categoría (no solo los obligatorios).
-    """
     if not cat_id:
         return []
-
     fp = CACHE_DIR / f"attrs_{cat_id}.json"
     data = _cached(fp)
-
     if data is None:
-        try:
-            url = f"https://api.mercadolibre.com/categories/{cat_id}/attributes"
-            data = requests.get(url, timeout=10).json()
+        access_token = get_ml_token()
+        headers = {"Authorization": f"Bearer {access_token}"}
+        url = f"https://api.mercadolibre.com/categories/{cat_id}/attributes"
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
             fp.write_text(json.dumps(data, ensure_ascii=False))
-        except requests.exceptions.RequestException:
+        else:
+            # Si MercadoLibre falla, guardamos error mínimo para no reventar
             return []
-
+    # A veces MercadoLibre responde con {"message": "Forbidden"} (dict) → evitamos crash
     if not isinstance(data, list):
         return []
+    return data
 
-    return data  # <-- Devuelve todos los atributos, sin filtrar
+# ==== EXTRA: SOLO OBLIGATORIOS ====
+def get_required_attrs(cat_id: str):
+    data = get_all_attrs(cat_id)
+    return [a for a in data if a.get("tags", {}).get("required")]
