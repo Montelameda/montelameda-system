@@ -150,7 +150,7 @@ with tabs[2]:
         st.text_input("Comisión", placeholder="Comisión", key="comision_vendedor_facebook")
         st.text_input("Precio al por mayor de 3", placeholder="Precio al por mayor", key="precio_mayor_3")
         try:
-            precio_fb = float(st.session_state.get("precio_facebook", "0"))
+            precio_fb = to_float(st.session_state.get("precio_facebook"))
             comision_fb = float(st.session_state.get("comision_vendedor_facebook", "0"))
             precio_compra = to_float(st.session_state.get("precio_compra"))
             ganancia_fb = precio_fb - precio_compra - comision_fb
@@ -192,7 +192,7 @@ with tabs[2]:
         st.text_input("Comisión", value=str(comision_ml), key="comision_mercado_libre", disabled=True)
         envio_ml = st.text_input("Envío", placeholder="Costo de envío", key="envio_mercado_libre", value="0")
         envio_ml = float(envio_ml) if envio_ml else 0
-        precio_compra = float(st.session_state.get("precio_compra", "0"))
+        precio_compra = to_float(st.session_state.get("precio_compra"))
         try:
             ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - envio_ml
             color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
