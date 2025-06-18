@@ -3,7 +3,6 @@ import firebase_config
 from login_app import login, esta_autenticado, obtener_rol
 import datetime
 import math
-
 import ml_api  # integración MercadoLibre
 
 # === TABLA DE COMISIONES Y COSTO FIJO ML POR CATEGORÍA (ajusta según tus datos reales) ===
@@ -215,6 +214,7 @@ with tabs[2]:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
+
 # TAB 4: Stock y otros
 with tabs[3]:
     st.text_input("Stock", placeholder="Cantidad en stock", key="stock")
@@ -228,7 +228,7 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (atributos, comisión y promoción -30%)
+# TAB 5: MercadoLibre (mejorado, muestra TODOS los atributos)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     nombre_ml = st.session_state.get("nombre_producto", "")
@@ -297,24 +297,7 @@ with tabs[4]:
 
         st.session_state["ml_attrs"] = ml_attr_vals
 
-    # Botón de PROMOCIÓN -30% solo si ya tiene ID de publicación (y no está aplicado)
-    id_pub = st.session_state.get("id_publicacion_mercado_libre")
-    en_promo = st.session_state.get("en_promocion", False)
-    if id_pub and not en_promo:
-        if st.button("Aplicar promoción -30%", key="btn_promo", help="Aplica precio, comisión y envío para el 30% OFF"):
-            precio_ml = float(st.session_state.get("precio_mercado_libre", 0))
-            precio_ml_desc = round(precio_ml * 0.7, 2)
-            comision_ml = float(st.session_state.get("comision_mercado_libre", 0))
-            envio_ml = float(st.session_state.get("envio_mercado_libre", 0))
-            st.session_state["precio_mercado_libre_30_desc"] = precio_ml_desc
-            st.session_state["comision_mercado_libre_30_desc"] = comision_ml
-            st.session_state["envio_mercado_libre_30_desc"] = envio_ml
-            st.session_state["en_promocion"] = True
-            st.success("¡Promoción -30% aplicada con éxito!")
-    elif id_pub and en_promo:
-        st.button("Promoción ya aplicada", disabled=True, key="btn_promo_applied")
-
-# --- Diccionario FINAL de producto (39 columnas) ---
+# --- Diccionario FINAL de producto (38 columnas) ---
 nuevo = {
     "id": st.session_state.nuevo_id,
     "codigo_barra": limpiar_valor(st.session_state.get("codigo_barra")),
@@ -333,12 +316,12 @@ nuevo = {
     "comision_vendedor_facebook": limpiar_valor(st.session_state.get("comision_vendedor_facebook")),
     "ganancia_facebook": str(ganancia_fb) if "ganancia_fb" in locals() and ganancia_fb is not None else "",
     "precio_mercado_libre": limpiar_valor(st.session_state.get("precio_mercado_libre")),
-    "comision_mercado_libre": limpiar_valor(st.session_state.get("comision_mercado_libre")),
+    "comision_mercado_libre": str(comision_ml) if "comision_ml" in locals() else "",
     "envio_mercado_libre": limpiar_valor(st.session_state.get("envio_mercado_libre")),
     "ganancia_mercado_libre": str(ganancia_ml_estimada) if "ganancia_ml_estimada" in locals() and ganancia_ml_estimada is not None else "",
     "ganancia_mercado_libre_iva": f"{ganancia_ml_neta:.0f}" if "ganancia_ml_neta" in locals() and ganancia_ml_neta is not None else "",
     "precio_mercado_libre_30_desc": f"{precio_ml_desc:.0f}" if "precio_ml_desc" in locals() else "",
-    "comision_mercado_libre_30_desc": limpiar_valor(st.session_state.get("comision_mercado_libre_30_desc")),
+    "comision_mercado_libre_30_desc": str(comision_ml_desc) if "comision_ml_desc" in locals() else "",
     "envio_mercado_libre_30_desc": limpiar_valor(st.session_state.get("envio_mercado_libre_30_desc")),
     "ganancia_mercado_libre_30_desc": str(ganancia_ml_desc_estimada) if "ganancia_ml_desc_estimada" in locals() and ganancia_ml_desc_estimada is not None else "",
     "ganancia_mercado_libre_iva_30_desc": f"{ganancia_ml_desc_neta:.0f}" if "ganancia_ml_desc_neta" in locals() and ganancia_ml_desc_neta is not None else "",
@@ -356,7 +339,6 @@ nuevo = {
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
     "ml_cat_id": limpiar_valor(st.session_state.get("ml_cat_id")),
     "ml_attrs": st.session_state.get("ml_attrs"),
-    "en_promocion": st.session_state.get("en_promocion", False),
 }
 
 # --- BOTÓN GUARDAR ---
