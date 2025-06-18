@@ -5,6 +5,20 @@ import datetime
 import math
 import ml_api  # integración MercadoLibre
 
+def to_float(val):
+    """
+    Convierte cualquier valor recibido a un número float seguro.
+    Si el valor está vacío, es None, tiene comas o no es un número, retorna 0.0.
+    Esto evita que tu app se caiga por ValueError cuando algún campo está vacío.
+    """
+    if val is None:
+        return 0.0
+    # Si el valor viene como string con coma decimal, reemplaza la coma por punto
+    try:
+        return float(str(val).replace(",", "."))
+    except Exception:
+        return 0.0
+
 # === TABLA DE COMISIONES Y COSTO FIJO ML POR CATEGORÍA (ajusta según tus datos reales) ===
 COMISIONES_ML = {
     # cat_id : (porcentaje, costo_fijo)
