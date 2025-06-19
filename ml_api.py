@@ -1,3 +1,4 @@
+# ml_api.py – Utilidades MercadoLibre Chile (MLC)
 import requests
 import json
 import pathlib
@@ -15,15 +16,12 @@ ML_REFRESH_TOKEN = "TG-68530d69b78f1e0001a8d29e-2227856718"
 
 TOKEN_CACHE = CACHE_DIR / "ml_token.json"
 
-
 # ==== TOKEN HANDLER ====
 def get_ml_token():
-    # Si está cacheado y no expiró, úsalo
     if TOKEN_CACHE.exists():
         d = json.loads(TOKEN_CACHE.read_text())
         if d.get("expires_at", 0) > datetime.datetime.now().timestamp() + 60:
             return d["access_token"]
-    # Si no, refresca
     resp = requests.post("https://api.mercadolibre.com/oauth/token", data={
         "grant_type": "refresh_token",
         "client_id": ML_CLIENT_ID,
@@ -41,7 +39,6 @@ def get_ml_token():
     else:
         raise RuntimeError(f"Error renovando token ML: {resp.text}")
 
-
 # ==== CACHÉ GENÉRICO ====
 def _cached(fp: pathlib.Path):
     if not fp.exists():
@@ -54,12 +51,12 @@ def _cached(fp: pathlib.Path):
     except json.JSONDecodeError:
         return None
 
-# ==== AUTOCOMPLETAR CATEGORÍAS ====
+# ==== SUGERIR CATEGORÍAS POR NOMBRE ====
 def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
     if not title.strip():
         return []
     q = urllib.parse.quote(title.strip())
-    url = (f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search?limit={limit}&q={q}")
+    url = f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search?limit={limit}&q={q}"
     try:
         data = requests.get(url, timeout=10).json()
     except requests.exceptions.RequestException:
@@ -76,7 +73,22 @@ def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
         out.append((cid, name))
     return out
 
-# ==== CAMPOS DE CATEGORÍA: OBLIGATORIOS + OPCIONALES ====
+# ==== OBTENER NOMBRE CATEGORÍA COMPLETO ====
+def get_categoria_nombre_ml(cat_id: str):
+    if not cat_id:
+        return ""
+    url = f"https://api.mercadolibre.com/categories/{cat_id}"
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.ok:
+            path = resp.json().get("path_from_root", [])
+            if path:
+                return " › ".join(n["name"] for n in path)
+    except:
+        pass
+    return cat_id
+
+# ==== OBTENER ATRIBUTOS DE CATEGORÍA ====
 def get_all_attrs(cat_id: str):
     if not cat_id:
         return []
@@ -91,70 +103,42 @@ def get_all_attrs(cat_id: str):
             data = resp.json()
             fp.write_text(json.dumps(data, ensure_ascii=False))
         else:
-            # Si MercadoLibre falla, guardamos error mínimo para no reventar
             return []
-    # A veces MercadoLibre responde con {"message": "Forbidden"} (dict) → evitamos crash
     if not isinstance(data, list):
         return []
     return data
 
-# ==== EXTRA: SOLO OBLIGATORIOS ====
 def get_required_attrs(cat_id: str):
     data = get_all_attrs(cat_id)
     return [a for a in data if a.get("tags", {}).get("required")]
 
-# ==== OBTENER NOMBRE COMPLETO DE CATEGORÍA ====
-def get_categoria_nombre_ml(cat_id):
-    """
-    Devuelve el nombre completo de la categoría de ML (incluyendo subcategorías), por ejemplo:
-    "Juguetes › Peluches › Animales de peluche"
-    """
-    if not cat_id:
-        return ""
-    url = f"https://api.mercadolibre.com/categories/{cat_id}"
-    try:
-        resp = requests.get(url, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            path = data.get("path_from_root", [])
-            return " › ".join([n["name"] for n in path])
-    except Exception as e:
-        pass
-    return ""
+# ==== FALLBACK: DICCIONARIO DE COMISIONES Y COSTOS FIJOS ====
+# Actualiza este diccionario si quieres, pero el sistema intenta usar siempre el API
+COMISIONES_CATEGORIAS_CHILE = {
+    # cat_id: { "clasico": (porcentaje, costo_fijo), "premium": (porcentaje, costo_fijo) }
+    "MLC1166": {"clasico": (13.0, None), "premium": (16.0, None)}, # Peluches/Juguetes ejemplo
+    "MLC1574": {"clasico": (13.0, None), "premium": (16.0, None)}, # Herramientas ejemplo
+    # Agrega tus categorías manualmente si quieres para pruebas
+}
 
-# ==== OBTENER COMISIÓN Y COSTO FIJO DE LA CATEGORÍA ====
-def get_comision_categoria_ml(cat_id, precio, tipo="clásico"):
-    """
-    Devuelve (porcentaje_comision, costo_fijo, tipo_tarifa)
-    - porcentaje_comision: Ej: 13
-    - costo_fijo: Ej: 700 o 1000 según precio (int)
-    - tipo_tarifa: "clásico" o "premium"
-    """
-    if not cat_id or not precio:
-        return 0, 0, tipo
-    # Llamada a la API de MercadoLibre para buscar las tarifas de la categoría
-    url = f"https://api.mercadolibre.com/sites/MLC/listing_prices"
-    params = {
-        "price": float(precio),
-        "category_id": cat_id,
-        "listing_type_id": "gold_special" if tipo.lower() == "premium" else "gold_pro"
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=10)
-        if resp.ok:
-            data = resp.json()
-            # MercadoLibre devuelve una lista de tipos de publicación
-            for tarifa in data:
-                if tarifa.get("listing_type_id") == params["listing_type_id"]:
-                    commission = tarifa.get("sale_fee_amount", 0)
-                    percent = tarifa.get("sale_fee", 0) * 100  # Ejemplo: 0.13 → 13
-                    costo_fijo = tarifa.get("fixed_fee_amount", 0)
-                    # Si faltan datos, los calculamos igual
-                    return percent, costo_fijo, tipo
-    except Exception:
-        pass
-    # Fallback: REGLA BÁSICA (ajusta a Chile)
-    precio = float(precio)
-    percent = 13 if tipo.lower() == "clásico" else 17  # Estos son valores ejemplo
-    costo_fijo = 1000 if precio >= 9990 else 700
-    return percent, costo_fijo, tipo
+# ==== FUNCIÓN PARA COMISIÓN SEGÚN CATEGORÍA, PRECIO Y TIPO PUBLICACIÓN ====
+def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
+    tipo_pub = tipo_pub.lower()
+    porcentaje = 13.0  # Por defecto
+    # Fallback por categoría (si no tenemos nada, usamos 13/16 por defecto)
+    if cat_id in COMISIONES_CATEGORIAS_CHILE and tipo_pub in COMISIONES_CATEGORIAS_CHILE[cat_id]:
+        porcentaje = COMISIONES_CATEGORIAS_CHILE[cat_id][tipo_pub][0]
+    elif tipo_pub == "premium":
+        porcentaje = 16.0
+    else:
+        porcentaje = 13.0
+    # Si quieres pedir la comisión exacta a la API, aquí va el endpoint (solo para premium algunas veces está disponible)
+    # https://api.mercadolibre.com/sites/MLC/listing_prices?price=19990&category_id=MLC1166&listing_type_id=gold_special
+    costo_fijo = 700 if precio <= 9990 else 1000
+    return porcentaje, costo_fijo
+
+# ==== PUBLICAR PRODUCTO (FUTURO) ====
+def publicar_producto_ml(datos_producto):
+    # Aquí va tu integración de publicación automática (cuando la necesites)
+    raise NotImplementedError("Publicación automática aún no implementada")
+
