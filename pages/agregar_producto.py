@@ -121,47 +121,7 @@ with tabs[1]:
     st.text_input("Etiquetas", placeholder="Palabras clave separadas por coma", key="etiquetas")
     st.text_input("Foto de proveedor", placeholder="URL de la foto", key="foto_proveedor")
 
-# TAB 5: MercadoLibre (muestra y guarda atributos oficiales, incluidos dimensiones y peso)
-with tabs[4]:
-    st.subheader("Atributos MercadoLibre")
-    ml_cat_id = st.session_state.get("ml_cat_id", "")
-    ml_attrs = {}
-    if ml_cat_id:
-        req_attrs = ml_api.get_required_attrs(ml_cat_id)
-        for attr in req_attrs:
-            aid = attr["id"]
-            nombre = attr["name"]
-            vtype = attr["value_type"]
-            # Render dinámico según el tipo de dato
-            if vtype == "boolean":
-                opt = ["Sí", "No"]
-                ml_attrs[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
-            elif vtype in ("list",):
-                opt = [v["name"] for v in attr.get("values", [])]
-                ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
-            elif vtype in ("number_unit", "number"):
-                ml_attrs[aid] = st.number_input(nombre, key=f"ml_{aid}")
-            else:
-                ml_attrs[aid] = st.text_input(nombre, key=f"ml_{aid}")
-        st.session_state["ml_attrs"] = ml_attrs
-    else:
-        st.info("Selecciona un nombre de producto para detectar categoría.")
-
-# ---- Ahora armamos las dimensiones automáticas desde los atributos rellenados ----
-attrs = st.session_state.get("ml_attrs", {})
-alto = attrs.get("HEIGHT", 0)
-ancho = attrs.get("WIDTH", 0)
-largo = attrs.get("LENGTH", 0)
-peso = attrs.get("WEIGHT", 0)
-
-# Si alguna dimensión falta, lo avisas:
-if not (alto and ancho and largo and peso):
-    st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
-    dimensiones_str = ""
-else:
-    dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
-
-# TAB 3: PRECIOS (solo el bloque de Mercado Libre, usa dimensiones_str)
+# TAB 3: PRECIOS
 with tabs[2]:
     st.markdown("### Mercado Libre - Tipo de publicación", unsafe_allow_html=True)
     st.radio(
@@ -174,6 +134,23 @@ with tabs[2]:
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
     col_fb, col_ml, col_ml30 = st.columns(3)
 
+    # Facebook
+    with col_fb:
+        st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
+        st.text_input("Precio para Facebook", placeholder="Precio para Facebook", key="precio_facebook")
+        st.text_input("Comisión", placeholder="Comisión", key="comision_vendedor_facebook")
+        st.text_input("Precio al por mayor de 3", placeholder="Precio al por mayor", key="precio_mayor_3")
+        try:
+            precio_fb = to_float(st.session_state.get("precio_facebook", 0))
+            comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
+            precio_compra = to_float(st.session_state.get("precio_compra", 0))
+            ganancia_fb = precio_fb - precio_compra - comision_fb
+            color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
+            st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
+        except:
+            st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
+            ganancia_fb = None
+
     # MercadoLibre
     with col_ml:
         st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
@@ -183,20 +160,34 @@ with tabs[2]:
         precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
         precio_compra = to_float(st.session_state.get("precio_compra", 0))
         tipo_pub = st.session_state.ml_listing_type.lower()
+        ml_cat_id = st.session_state.get("ml_cat_id", "")
         porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
         comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
 
         # --- Cálculo de envío REAL usando dimensiones_str ---
-        # (Solo si tienes todas las dimensiones)
+        attrs = st.session_state.get("ml_attrs", {})
+        alto = attrs.get("HEIGHT", 0)
+        ancho = attrs.get("WIDTH", 0)
+        largo = attrs.get("LENGTH", 0)
+        peso = attrs.get("WEIGHT", 0)
+        if not (alto and ancho and largo and peso):
+            st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
+            dimensiones_str = ""
+        else:
+            dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
+
         if dimensiones_str:
-            costo_envio, _ = ml_api.get_shipping_cost_mlc(
-                item_price=precio_ml,
-                dimensions=dimensiones_str,
-                category_id=ml_cat_id,
-                listing_type_id="gold_special" if tipo_pub in ["clásico", "clasico"] else "gold_pro",
-                condition="new"
-            )
+            try:
+                costo_envio, _ = ml_api.get_shipping_cost_mlc(
+                    item_price=precio_ml,
+                    dimensions=dimensiones_str,
+                    category_id=ml_cat_id,
+                    listing_type_id="gold_special" if tipo_pub in ["clásico", "clasico"] else "gold_pro",
+                    condition="new"
+                )
+            except Exception:
+                costo_envio = 0
         else:
             costo_envio = 0
 
@@ -251,45 +242,32 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (muestra y guarda atributos oficiales, incluidos dimensiones y peso)
+# TAB 5: MercadoLibre (atributos oficiales ML, con keys únicos)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     ml_cat_id = st.session_state.get("ml_cat_id", "")
     ml_attrs = {}
     if ml_cat_id:
         req_attrs = ml_api.get_required_attrs(ml_cat_id)
-        for attr in req_attrs:
+        for idx, attr in enumerate(req_attrs):  # <- índice agregado aquí para key único
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
+            unique_key = f"ml_{aid}_{idx}"
             # Render dinámico según el tipo de dato
             if vtype == "boolean":
                 opt = ["Sí", "No"]
-                ml_attrs[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
+                ml_attrs[aid] = st.selectbox(nombre, opt, key=unique_key)
             elif vtype in ("list",):
                 opt = [v["name"] for v in attr.get("values", [])]
-                ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
+                ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=unique_key)
             elif vtype in ("number_unit", "number"):
-                ml_attrs[aid] = st.number_input(nombre, key=f"ml_{aid}")
+                ml_attrs[aid] = st.number_input(nombre, key=unique_key)
             else:
-                ml_attrs[aid] = st.text_input(nombre, key=f"ml_{aid}")
+                ml_attrs[aid] = st.text_input(nombre, key=unique_key)
         st.session_state["ml_attrs"] = ml_attrs
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
-
-# ---- Ahora armamos las dimensiones automáticas desde los atributos rellenados ----
-attrs = st.session_state.get("ml_attrs", {})
-alto = attrs.get("HEIGHT", 0)
-ancho = attrs.get("WIDTH", 0)
-largo = attrs.get("LENGTH", 0)
-peso = attrs.get("WEIGHT", 0)
-
-# Si alguna dimensión falta, lo avisas:
-if not (alto and ancho and largo and peso):
-    st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
-    dimensiones_str = ""
-else:
-    dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
 
 # --- Diccionario FINAL de producto ---
 nuevo = {
@@ -332,7 +310,6 @@ nuevo = {
     "ultima_entrada": limpiar_valor(st.session_state.get("ultima_entrada")),
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
     "ml_cat_id": ml_cat_id,
-    "ml_cat_name": ml_cat_name,
     "ml_listing_type": tipo_pub,
     "ml_attrs": st.session_state.get("ml_attrs", {})
 }
