@@ -123,6 +123,10 @@ with tabs[1]:
 
 # --- TAB 3: PRECIOS ---
 with tabs[2]:
+    # ==== Precio de compra GLOBAL (va arriba, afecta todo lo demás) ====
+    st.markdown("#### Precio de compra/costo del producto", unsafe_allow_html=True)
+    st.text_input("Precio de compra", placeholder="Costo del producto", key="precio_compra")
+    
     # ---- Publicación ML ARRIBA del bloque ML ----
     st.markdown("### Mercado Libre - Tipo de publicación", unsafe_allow_html=True)
     st.radio(
@@ -180,6 +184,7 @@ with tabs[2]:
                 unsafe_allow_html=True
             )
 
+    # --- Detalles de precios ---
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
     col_fb, col_ml, col_ml30 = st.columns(3)
 
@@ -203,7 +208,6 @@ with tabs[2]:
     # MercadoLibre
     with col_ml:
         st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
-        st.text_input("Precio de compra", placeholder="Costo del producto", key="precio_compra")
         st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
         st.text_input("Costo de envío MercadoLibre", value="0", key="envio_mercado_libre")
