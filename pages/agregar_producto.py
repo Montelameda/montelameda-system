@@ -132,57 +132,32 @@ with tabs[2]:
         horizontal=True,
         label_visibility="visible"
     )
-# Categoría ML detectada (debajo del precio, arriba de comisión)
-        ml_cat_id, ml_cat_name = "", ""
-        if nombre_producto:
-            try:
-                cats = ml_api.suggest_categories(nombre_producto)
-                if cats:
-                    ml_cat_id, ml_cat_name = cats[0]
-            except Exception:
-                pass
-        st.session_state["ml_cat_id"] = ml_cat_id
-        if ml_cat_id:
-            st.markdown(
-                f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
-                f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
-                unsafe_allow_html=True
-            )
-    st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
-    col_fb, col_ml, col_ml30 = st.columns(3)
 
-    # Facebook
-    with col_fb:
-        st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
-        st.text_input("Precio para Facebook", placeholder="Precio para Facebook", key="precio_facebook")
-        st.text_input("Comisión", placeholder="Comisión", key="comision_vendedor_facebook")
-        st.text_input("Precio al por mayor de 3", placeholder="Precio al por mayor", key="precio_mayor_3")
+    # ==== Categoría ML y Comisión: DEBAJO de tipo publicación ====
+    ml_cat_id, ml_cat_name = "", ""
+    if nombre_producto:
         try:
-            precio_fb = to_float(st.session_state.get("precio_facebook", 0))
-            comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
-            precio_compra = to_float(st.session_state.get("precio_compra", 0))
-            ganancia_fb = precio_fb - precio_compra - comision_fb
-            color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
-            st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
-        except:
-            st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
-            ganancia_fb = None
+            cats = ml_api.suggest_categories(nombre_producto)
+            if cats:
+                ml_cat_id, ml_cat_name = cats[0]
+        except Exception:
+            pass
+    st.session_state["ml_cat_id"] = ml_cat_id
 
-    # MercadoLibre (mejor estética y lógica)
-    with col_ml:
-        st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
-        st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
+    porcentaje, costo_fijo = 0, 0
+    comision_ml = 0
+    precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
+    precio_compra = to_float(st.session_state.get("precio_compra", 0))
+    tipo_pub = st.session_state.ml_listing_type.lower()
 
-                # --- Comisión Mercado Libre ---
-        precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
-        precio_compra = to_float(st.session_state.get("precio_compra", 0))
-        tipo_pub = st.session_state.ml_listing_type.lower()
+    if ml_cat_id:
         porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
         comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
-
-        st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
-
-        # Mostrar detalle de comisión: real, personalizada, o sin datos.
+        st.markdown(
+            f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
+            f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
+            unsafe_allow_html=True
+        )
         if porcentaje > 0:
             st.markdown(
                 f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
@@ -204,6 +179,32 @@ with tabs[2]:
                 </div>""",
                 unsafe_allow_html=True
             )
+
+    st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
+    col_fb, col_ml, col_ml30 = st.columns(3)
+
+    # Facebook
+    with col_fb:
+        st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
+        st.text_input("Precio para Facebook", placeholder="Precio para Facebook", key="precio_facebook")
+        st.text_input("Comisión", placeholder="Comisión", key="comision_vendedor_facebook")
+        st.text_input("Precio al por mayor de 3", placeholder="Precio al por mayor", key="precio_mayor_3")
+        try:
+            precio_fb = to_float(st.session_state.get("precio_facebook", 0))
+            comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
+            precio_compra = to_float(st.session_state.get("precio_compra", 0))
+            ganancia_fb = precio_fb - precio_compra - comision_fb
+            color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
+            st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
+        except:
+            st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
+            ganancia_fb = None
+
+    # MercadoLibre
+    with col_ml:
+        st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
+        st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
+        st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
         st.text_input("Costo de envío MercadoLibre", value="0", key="envio_mercado_libre")
         try:
             envio_ml = to_float(st.session_state.get("envio_mercado_libre", 0))
