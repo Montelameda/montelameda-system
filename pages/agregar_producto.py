@@ -146,15 +146,13 @@ with tabs[2]:
     # MercadoLibre (dinámico según categoría y tipo publicación)
     with col_ml:
         st.markdown("🛒 <b>Mercado Libre</b>", unsafe_allow_html=True)
-        # Opción tipo publicación
-        if "ml_listing_type" not in st.session_state or st.session_state.ml_listing_type not in ["Clásico", "Premium"]:
-            st.session_state.ml_listing_type = "Clásico"
-        st.radio(
+        # Opción tipo publicación (fuera de la fila, para no romper la estética)
+        st.markdown('<div style="margin-bottom:8px"></div>', unsafe_allow_html=True)
+        tipo_pub = st.radio(
             "Tipo publicación ML", 
             options=["Clásico", "Premium"], 
             key="ml_listing_type", 
-            horizontal=True,
-            label_visibility="collapsed"
+            horizontal=True
         )
         st.markdown('<div class="small-label">Precio para ML</div>', unsafe_allow_html=True)
         st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
@@ -169,18 +167,24 @@ with tabs[2]:
         st.session_state["ml_cat_id"] = ml_cat_id
         # Mostrar categoría
         if ml_cat_id:
+            # Traer el nombre completo y ruta de la categoría (si lo tienes)
             st.markdown(f'<div class="small-label">Categoría ML detectada:</div> <b>{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>', unsafe_allow_html=True)
         # Calcular comisión
         precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
         precio_compra = to_float(st.session_state.get("precio_compra", 0))
-        tipo_pub = st.session_state.ml_listing_type.lower()
-        porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
+        porcentaje, costo_fijo = 0.0, 0.0
+        if ml_cat_id and tipo_pub and precio_ml > 0:
+            try:
+                porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub.lower())
+            except Exception:
+                porcentaje, costo_fijo = 13.0, 700.0  # fallback
         comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
         # Info de comisión debajo (pequeño)
-        st.markdown(f"""<div class="block-ml" style="font-size:0.97em;">
-            Comisión MercadoLibre: <b>{porcentaje:.1f}%</b> + <b>{costo_fijo:.0f} fijo</b>
-        </div>""", unsafe_allow_html=True)
+        if porcentaje > 0:
+            st.markdown(f"""<div class="block-ml" style="font-size:0.97em;">
+                Comisión MercadoLibre: <b>{porcentaje:.1f}%</b> + <b>{costo_fijo:.0f} fijo</b>
+            </div>""", unsafe_allow_html=True)
         # Costo de envío (a futuro API, por ahora manual)
         st.text_input("Costo de envío MercadoLibre", value="0", key="envio_mercado_libre")
         try:
@@ -298,7 +302,7 @@ nuevo = {
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
     "ml_cat_id": ml_cat_id,
     "ml_cat_name": ml_cat_name,
-    "ml_listing_type": tipo_pub,
+    "ml_listing_type": tipo_pub.lower() if tipo_pub else "clasico",
     "ml_attrs": st.session_state.get("ml_attrs", {})
 }
 
