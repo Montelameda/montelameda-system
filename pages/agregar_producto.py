@@ -57,6 +57,7 @@ body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 .resaltado { background: #e8ffe8; border-radius: 6px; padding: 2px 10px; display: inline-block; margin: 0.3em 0; }
 .block-ml { background: #fffbe7; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px;}
 .small-label {font-size:0.97rem; color:#1860d3;font-weight:700; margin-bottom:3px;}
+.radio-mlpub {margin-bottom:12px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -122,10 +123,18 @@ with tabs[1]:
 
 # --- TAB 3: PRECIOS ---
 with tabs[2]:
-    st.text_input("Precio compra *", placeholder="Costo del producto", key="precio_compra")
+    # ---- Publicación ML ARRIBA del bloque ML ----
+    st.markdown("### Mercado Libre - Tipo de publicación", unsafe_allow_html=True)
+    st.radio(
+        "Tipo publicación ML",
+        options=["Clásico", "Premium"],
+        key="ml_listing_type",
+        horizontal=True,
+        label_visibility="visible"
+    )
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
     col_fb, col_ml, col_ml30 = st.columns(3)
-    
+
     # Facebook
     with col_fb:
         st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
@@ -143,19 +152,12 @@ with tabs[2]:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_fb = None
 
-    # MercadoLibre (dinámico según categoría y tipo publicación)
+    # MercadoLibre (mejor estética y lógica)
     with col_ml:
-        st.markdown("🛒 <b>Mercado Libre</b>", unsafe_allow_html=True)
-        # Opción tipo publicación (fuera de la fila, para no romper la estética)
-        st.markdown('<div style="margin-bottom:8px"></div>', unsafe_allow_html=True)
-        tipo_pub = st.radio(
-            "Tipo publicación ML", 
-            options=["Clásico", "Premium"], 
-            key="ml_listing_type", 
-            horizontal=True
-        )
-        st.markdown('<div class="small-label">Precio para ML</div>', unsafe_allow_html=True)
+        st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
         st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
+
+        # Categoría ML detectada (debajo del precio, arriba de comisión)
         ml_cat_id, ml_cat_name = "", ""
         if nombre_producto:
             try:
@@ -165,27 +167,27 @@ with tabs[2]:
             except Exception:
                 pass
         st.session_state["ml_cat_id"] = ml_cat_id
-        # Mostrar categoría
         if ml_cat_id:
-            # Traer el nombre completo y ruta de la categoría (si lo tienes)
-            st.markdown(f'<div class="small-label">Categoría ML detectada:</div> <b>{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>', unsafe_allow_html=True)
-        # Calcular comisión
+            st.markdown(
+                f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
+                f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
+                unsafe_allow_html=True
+            )
+
+        # --- Comisión Mercado Libre ---
         precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
         precio_compra = to_float(st.session_state.get("precio_compra", 0))
-        porcentaje, costo_fijo = 0.0, 0.0
-        if ml_cat_id and tipo_pub and precio_ml > 0:
-            try:
-                porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub.lower())
-            except Exception:
-                porcentaje, costo_fijo = 13.0, 700.0  # fallback
+        tipo_pub = st.session_state.ml_listing_type.lower()
+        porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
         comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
-        # Info de comisión debajo (pequeño)
-        if porcentaje > 0:
-            st.markdown(f"""<div class="block-ml" style="font-size:0.97em;">
-                Comisión MercadoLibre: <b>{porcentaje:.1f}%</b> + <b>{costo_fijo:.0f} fijo</b>
-            </div>""", unsafe_allow_html=True)
-        # Costo de envío (a futuro API, por ahora manual)
+        # Detalle comisión (menos padding)
+        st.markdown(
+            f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
+            Comisión MercadoLibre: <b>{porcentaje:.1f}%</b> + <b>{int(costo_fijo):,} fijo</b>
+            </div>""",
+            unsafe_allow_html=True
+        )
         st.text_input("Costo de envío MercadoLibre", value="0", key="envio_mercado_libre")
         try:
             envio_ml = to_float(st.session_state.get("envio_mercado_libre", 0))
@@ -302,7 +304,7 @@ nuevo = {
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
     "ml_cat_id": ml_cat_id,
     "ml_cat_name": ml_cat_name,
-    "ml_listing_type": tipo_pub.lower() if tipo_pub else "clasico",
+    "ml_listing_type": tipo_pub,
     "ml_attrs": st.session_state.get("ml_attrs", {})
 }
 
