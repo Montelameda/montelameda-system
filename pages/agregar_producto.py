@@ -3,7 +3,7 @@ import firebase_config
 from login_app import login, esta_autenticado, obtener_rol
 import datetime
 import math
-import ml_api  # Tu nuevo archivo full power
+import ml_api  # integración MercadoLibre
 
 # --- Autenticación ---
 if not esta_autenticado():
@@ -18,10 +18,15 @@ if rol_usuario != "admin":
 st.set_page_config(page_title="Agregar Producto", layout="wide")
 db = firebase_config.db
 
-def a_str(valor):
-    if valor is None:
-        return ""
-    return str(valor)
+# === FUNCIONES UTILIDAD ===
+def to_float(val):
+    """Convierte valor recibido a float seguro. Si es vacío, None o con coma, retorna 0.0"""
+    if val is None or str(val).strip() == "":
+        return 0.0
+    try:
+        return float(str(val).replace(",", "."))
+    except Exception:
+        return 0.0
 
 def limpiar_valor(valor):
     if valor is None:
@@ -31,13 +36,14 @@ def limpiar_valor(valor):
     if isinstance(valor, list) and len(valor) == 0:
         return None
     v = str(valor).strip().lower()
-    if v == "" or v == "nan" or v == "none" or v == "null" or v == "sin info" or v == "n/a":
+    if v in ["", "nan", "none", "null", "sin info", "n/a"]:
         return None
     return str(valor).strip()
 
 def filtrar_campos(diccionario):
     return {k: v for k, v in diccionario.items() if k and v not in [None, ""]}
 
+# --- FORMULARIO ---
 st.markdown("""
 <style>
 body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
@@ -49,9 +55,8 @@ body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 .valor-negativo { color: #f12b2b; font-weight: bold; font-size: 1.3em; }
 .valor-iva { color: #0e7ae6; font-weight: bold; }
 .resaltado { background: #e8ffe8; border-radius: 6px; padding: 2px 10px; display: inline-block; margin: 0.3em 0; }
-.comision-badge { font-size:1em; background:#fffbe7; border:1.5px solid #ffec6d; border-radius:7px; padding:3px 12px; color:#e59d00; margin-left: 10px;}
-.envio-badge { font-size:1em; background:#eaf8ff; border:1.5px solid #69bcfa; border-radius:7px; padding:3px 12px; color:#0089c7; margin-left: 10px;}
-.categoria-badge { font-size:1em; background:#f5f6fb; border:1.5px solid #b5b5e3; border-radius:7px; padding:3px 12px; color:#232378; margin-left: 10px;}
+.block-ml { background: #fffbe7; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px;}
+.small-label {font-size:0.97rem; color:#1860d3;font-weight:700; margin-bottom:3px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -80,13 +85,13 @@ with tabs[0]:
         st.text_input("Código de barra *", placeholder="Ej: 1234567890", key="codigo_barra")
         nombre_producto = st.text_input("Nombre del producto *", placeholder="Ej: Camiseta deportiva", key="nombre_producto", max_chars=60)
         docs_cat = db.collection("categorias").stream()
-        categorias = sorted([a_str(doc.to_dict()["nombre"]) for doc in docs_cat if "nombre" in doc.to_dict()])
+        categorias = sorted([str(doc.to_dict()["nombre"]) for doc in docs_cat if "nombre" in doc.to_dict()])
         st.selectbox("Categoría *", options=categorias, key="categoria")
     with col2:
         st.text_input("Código mínimo *", placeholder="Ej: 001", key="codigo_minimo")
         st.text_input("Marca *", placeholder="Ej: Nike", key="marca")
         docs_prov = db.collection("proveedores").stream()
-        proveedores = sorted([a_str(doc.to_dict()["nombre"]) for doc in docs_prov if "nombre" in doc.to_dict()])
+        proveedores = sorted([str(doc.to_dict()["nombre"]) for doc in docs_prov if "nombre" in doc.to_dict()])
         opciones_proveedores = proveedores + ["Agregar nuevo"]
         proveedor_seleccionado = st.selectbox("Proveedor *", options=opciones_proveedores, key="proveedor")
         if proveedor_seleccionado == "Agregar nuevo":
@@ -115,124 +120,107 @@ with tabs[1]:
     st.text_input("Etiquetas", placeholder="Palabras clave separadas por coma", key="etiquetas")
     st.text_input("Foto de proveedor", placeholder="URL de la foto", key="foto_proveedor")
 
-# -----------------------
-# TAB 3: PRECIOS
-# -----------------------
+# --- TAB 3: PRECIOS ---
 with tabs[2]:
     st.text_input("Precio compra *", placeholder="Costo del producto", key="precio_compra")
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
-
     col_fb, col_ml, col_ml30 = st.columns(3)
-    # --- Facebook ---
+    
+    # Facebook
     with col_fb:
         st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
-        st.text_input("Precio", placeholder="Precio para Facebook", key="precio_facebook")
+        st.text_input("Precio para Facebook", placeholder="Precio para Facebook", key="precio_facebook")
         st.text_input("Comisión", placeholder="Comisión", key="comision_vendedor_facebook")
         st.text_input("Precio al por mayor de 3", placeholder="Precio al por mayor", key="precio_mayor_3")
         try:
-            precio_fb = float(st.session_state.get("precio_facebook", "0").replace(",", ""))
-            comision_fb = float(st.session_state.get("comision_vendedor_facebook", "0").replace(",", ""))
-            precio_compra = float(st.session_state.get("precio_compra", "0").replace(",", ""))
+            precio_fb = to_float(st.session_state.get("precio_facebook", 0))
+            comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
+            precio_compra = to_float(st.session_state.get("precio_compra", 0))
             ganancia_fb = precio_fb - precio_compra - comision_fb
             color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
-        except Exception:
+        except:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_fb = None
 
-    # --- Mercado Libre (Dinámico full)
+    # MercadoLibre (dinámico según categoría y tipo publicación)
     with col_ml:
         st.markdown("🛒 <b>Mercado Libre</b>", unsafe_allow_html=True)
-
-        # --- Cambia tipo de publicación ML
+        # Opción tipo publicación
         if "ml_listing_type" not in st.session_state:
-            st.session_state.ml_listing_type = "gold_special"
-        tipo_pub = st.radio("Tipo publicación ML", ["Clásico", "Premium"], key="ml_tipo_pub_radio", index=0 if st.session_state.ml_listing_type=="gold_special" else 1)
-        st.session_state.ml_listing_type = "gold_special" if tipo_pub=="Clásico" else "gold_pro"
-
-        st.text_input("Precio", placeholder="Precio para ML", key="precio_mercado_libre")
-        try:
-            precio_ml = float(st.session_state.get("precio_mercado_libre", "0").replace(",", ""))
-        except Exception:
-            precio_ml = 0
-
-        nombre_ml = st.session_state.get("nombre_producto", "")
-        categoria_ml = ""
-        ml_cat_id, ml_cat_path = "", ""
-        if nombre_ml:
-            cats = ml_api.suggest_categories(nombre_ml)
-            if cats:
-                ml_cat_id, ml_cat_path = cats[0]
-                categoria_ml = ml_api.get_categoria_nombre_ml(ml_cat_id)
-            else:
-                ml_cat_id, ml_cat_path = "", ""
-                categoria_ml = ""
-        # Muestra badge de categoría
-        if ml_cat_id and categoria_ml:
-            st.markdown(f"<div class='categoria-badge'><b>Categoría ML:</b> {categoria_ml}</div>", unsafe_allow_html=True)
-
-        # Comisión, costo fijo y envío (dinámicos por API)
-        porcentaje, costo_fijo = 0, 0
-        if ml_cat_id and precio_ml > 0:
-            porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, st.session_state.ml_listing_type)
-            aplica_envio_gratis, costo_envio = ml_api.get_envio_gratis_ml(ml_cat_id, precio_ml, listing_type_id=st.session_state.ml_listing_type)
-        else:
-            aplica_envio_gratis, costo_envio = False, 0
-
-        # Comisión total
-        comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo) if precio_ml > 0 else 0
-
+            st.session_state.ml_listing_type = "clásico"
+        st.radio(
+            "Tipo publicación ML", 
+            options=["Clásico", "Premium"], 
+            key="ml_listing_type", 
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+        st.markdown('<div class="small-label">Precio para ML</div>', unsafe_allow_html=True)
+        st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
+        ml_cat_id, ml_cat_name = "", ""
+        if nombre_producto:
+            try:
+                cats = ml_api.suggest_categories(nombre_producto)
+                if cats:
+                    ml_cat_id, ml_cat_name = cats[0]
+            except Exception:
+                pass
+        st.session_state["ml_cat_id"] = ml_cat_id
+        # Mostrar categoría
+        if ml_cat_id:
+            st.markdown(f'<div class="small-label">Categoría ML detectada:</div> <b>{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>', unsafe_allow_html=True)
+        # Calcular comisión
+        precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
+        precio_compra = to_float(st.session_state.get("precio_compra", 0))
+        tipo_pub = st.session_state.ml_listing_type.lower()
+        porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
+        comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
-        st.text_input("Costo Envío MercadoLibre", value=f"{costo_envio:.0f}", key="envio_mercado_libre", disabled=True)
-
-        # Badges
-        if porcentaje > 0:
-            st.markdown(f"<span class='comision-badge'>🟡 Comisión ML: {porcentaje:.2f}% + ${costo_fijo:,} fijo</span>", unsafe_allow_html=True)
-        if aplica_envio_gratis:
-            st.markdown(f"<span class='envio-badge'>📦 ¡Envío gratis obligatorio! (Vendedor paga: ${costo_envio:,})</span>", unsafe_allow_html=True)
-
+        # Info de comisión debajo (pequeño)
+        st.markdown(f"""<div class="block-ml" style="font-size:0.97em;">
+            Comisión MercadoLibre: <b>{porcentaje:.1f}%</b> + <b>{costo_fijo:.0f} fijo</b>
+        </div>""", unsafe_allow_html=True)
+        # Costo de envío (a futuro API, por ahora manual)
+        st.text_input("Costo de envío MercadoLibre", value="0", key="envio_mercado_libre")
         try:
-            precio_compra = float(st.session_state.get("precio_compra", "0").replace(",", ""))
-            ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - costo_envio
+            envio_ml = to_float(st.session_state.get("envio_mercado_libre", 0))
+            ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - envio_ml
             color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml}'>✅ {ganancia_ml_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta = precio_ml - comision_ml - costo_envio
+            ganancia_bruta = precio_ml - comision_ml - envio_ml
             iva_19 = ganancia_bruta * 0.19
             ganancia_ml_neta = ganancia_bruta - iva_19 - precio_compra
-            st.markdown(f"<span class='valor-iva'>🟩 Ganancia ML descontando IVA 19%: {ganancia_ml_neta:.0f} CLP</span>", unsafe_allow_html=True)
-        except Exception:
+            st.markdown(f"<span class='valor-iva'>🟩 Ganancia de ML descontando IVA 19%: {ganancia_ml_neta:.0f} CLP</span>", unsafe_allow_html=True)
+        except:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_ml_estimada = None
             ganancia_ml_neta = None
 
-    # --- ML con 30% desc. ---
+    # MercadoLibre con 30% desc.
     with col_ml30:
-        st.markdown("📉 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
+        st.markdown("💖 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
+        precio_ml_30 = precio_ml * 0.7
+        porcentaje_30, costo_fijo_30 = porcentaje, costo_fijo  # usa el mismo tipo/cat
+        comision_ml_30 = round(precio_ml_30 * porcentaje_30 / 100 + costo_fijo_30)
+        st.text_input("Precio", value=f"{precio_ml_30:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
+        st.text_input("Comisión", value=f"{comision_ml_30:.0f}", key="comision_mercado_libre_30_desc", disabled=True)
+        st.text_input("Envío", value="0", key="envio_mercado_libre_30_desc", disabled=True)
         try:
-            precio_ml_desc = precio_ml - (precio_ml * 0.3)
-            st.text_input("Precio", value=f"{precio_ml_desc:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
-        except:
-            st.text_input("Precio", value="", key="precio_mercado_libre_30_desc", disabled=True)
-        st.text_input("Comisión", placeholder="Comisión", key="comision_mercado_libre_30_desc")
-        st.text_input("Envío", placeholder="Envío", key="envio_mercado_libre_30_desc")
-        try:
-            precio_ml_desc = float(st.session_state.get("precio_mercado_libre_30_desc", "0").replace(",", ""))
-            comision_ml_desc = float(st.session_state.get("comision_mercado_libre_30_desc", "0").replace(",", ""))
-            envio_ml_desc = float(st.session_state.get("envio_mercado_libre_30_desc", "0").replace(",", ""))
-            precio_compra = float(st.session_state.get("precio_compra", "0").replace(",", ""))
-            ganancia_ml_desc_estimada = precio_ml_desc - precio_compra - comision_ml_desc - envio_ml_desc
+            envio_ml_30 = 0  # Por ahora fijo, luego API
+            ganancia_ml_desc_estimada = precio_ml_30 - precio_compra - comision_ml_30 - envio_ml_30
             color_ml_desc = "valor-positivo" if ganancia_ml_desc_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml_desc}'>✅ {ganancia_ml_desc_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta_desc = precio_ml_desc - comision_ml_desc - envio_ml_desc
+            ganancia_bruta_desc = precio_ml_30 - comision_ml_30 - envio_ml_30
             iva_19_desc = ganancia_bruta_desc * 0.19
             ganancia_ml_desc_neta = ganancia_bruta_desc - iva_19_desc - precio_compra
             st.markdown(f"<span class='valor-iva'>🟩 Ganancia ML -30% con IVA 19%: {ganancia_ml_desc_neta:.0f} CLP</span>", unsafe_allow_html=True)
-        except Exception:
+        except:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
 
-# TAB 4: Stock y otros
+# --- TAB 4: Stock y otros
 with tabs[3]:
     st.text_input("Stock", placeholder="Cantidad en stock", key="stock")
     st.text_input("Mostrar en catálogo", placeholder="Sí/No", key="mostrar_catalogo")
@@ -245,36 +233,28 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (Atributos completos)
+# TAB 5: MercadoLibre (mejorado, muestra TODOS los atributos)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
-    ml_cat_id_final = ml_cat_id if ml_cat_id else ""
-    ml_cat_name_final = categoria_ml if categoria_ml else ""
-    st.text_input("ID categoría ML", value=ml_cat_id_final, key="ml_cat_id", disabled=True)
-    st.text_input("Ruta de categoría ML", value=ml_cat_name_final, key="ml_cat_path", disabled=True)
-    req_attrs = []
-    if ml_cat_id_final:
-        try:
-            req_attrs = ml_api.get_all_attrs(ml_cat_id_final)
-        except Exception as e:
-            st.warning(f"No se pudieron obtener atributos: {e}")
-    if not req_attrs:
-        st.info("No hay atributos para esta categoría, solo debes completar el resto del formulario.")
-    else:
+    ml_cat_id = st.session_state.get("ml_cat_id", "")
+    if ml_cat_id:
+        req_attrs = ml_api.get_all_attrs(ml_cat_id)
         ml_attr_vals = {}
         for attr in req_attrs:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
-            if vtype == "boolean":
+            if vtype in ("boolean"):
                 opt = ["Sí", "No"]
                 ml_attr_vals[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
-            elif vtype == "list":
+            elif vtype in ("list",):
                 opt = [v["name"] for v in attr.get("values", [])]
                 ml_attr_vals[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
             else:
                 ml_attr_vals[aid] = st.text_input(nombre, key=f"ml_{aid}")
         st.session_state["ml_attrs"] = ml_attr_vals
+    else:
+        st.info("Selecciona un nombre de producto para detectar categoría.")
 
 # --- Diccionario FINAL de producto ---
 nuevo = {
@@ -293,17 +273,17 @@ nuevo = {
     "stock": limpiar_valor(st.session_state.get("stock")),
     "precio_facebook": limpiar_valor(st.session_state.get("precio_facebook")),
     "comision_vendedor_facebook": limpiar_valor(st.session_state.get("comision_vendedor_facebook")),
-    "ganancia_facebook": str(ganancia_fb) if "ganancia_fb" in locals() and ganancia_fb is not None else "",
+    "ganancia_facebook": str(ganancia_fb) if "ganancia_fb" in locals() and ganancia_fb is not None else None,
     "precio_mercado_libre": limpiar_valor(st.session_state.get("precio_mercado_libre")),
-    "comision_mercado_libre": str(comision_ml) if "comision_ml" in locals() and comision_ml is not None else "",
-    "envio_mercado_libre": str(costo_envio) if "costo_envio" in locals() and costo_envio is not None else "",
-    "ganancia_mercado_libre": str(ganancia_ml_estimada) if "ganancia_ml_estimada" in locals() and ganancia_ml_estimada is not None else "",
-    "ganancia_mercado_libre_iva": f"{ganancia_ml_neta:.0f}" if "ganancia_ml_neta" in locals() and ganancia_ml_neta is not None else "",
-    "precio_mercado_libre_30_desc": f"{precio_ml_desc:.0f}" if "precio_ml_desc" in locals() else "",
-    "comision_mercado_libre_30_desc": limpiar_valor(st.session_state.get("comision_mercado_libre_30_desc")),
-    "envio_mercado_libre_30_desc": limpiar_valor(st.session_state.get("envio_mercado_libre_30_desc")),
-    "ganancia_mercado_libre_30_desc": str(ganancia_ml_desc_estimada) if "ganancia_ml_desc_estimada" in locals() and ganancia_ml_desc_estimada is not None else "",
-    "ganancia_mercado_libre_iva_30_desc": f"{ganancia_ml_desc_neta:.0f}" if "ganancia_ml_desc_neta" in locals() and ganancia_ml_desc_neta is not None else "",
+    "comision_mercado_libre": str(comision_ml),
+    "envio_mercado_libre": limpiar_valor(st.session_state.get("envio_mercado_libre")),
+    "ganancia_mercado_libre": str(ganancia_ml_estimada) if "ganancia_ml_estimada" in locals() and ganancia_ml_estimada is not None else None,
+    "ganancia_mercado_libre_iva": f"{ganancia_ml_neta:.0f}" if "ganancia_ml_neta" in locals() and ganancia_ml_neta is not None else None,
+    "precio_mercado_libre_30_desc": f"{precio_ml_30:.0f}" if "precio_ml_30" in locals() else None,
+    "comision_mercado_libre_30_desc": str(comision_ml_30),
+    "envio_mercado_libre_30_desc": "0",
+    "ganancia_mercado_libre_30_desc": str(ganancia_ml_desc_estimada) if "ganancia_ml_desc_estimada" in locals() and ganancia_ml_desc_estimada is not None else None,
+    "ganancia_mercado_libre_iva_30_desc": f"{ganancia_ml_desc_neta:.0f}" if "ganancia_ml_desc_neta" in locals() and ganancia_ml_desc_neta is not None else None,
     "precio_mayor_3": limpiar_valor(st.session_state.get("precio_mayor_3")),
     "mostrar_catalogo": limpiar_valor(st.session_state.get("mostrar_catalogo")),
     "id_publicacion_mercado_libre": limpiar_valor(st.session_state.get("id_publicacion_mercado_libre")),
@@ -317,24 +297,23 @@ nuevo = {
     "ultima_entrada": limpiar_valor(st.session_state.get("ultima_entrada")),
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
     "ml_cat_id": ml_cat_id,
-    "ml_cat_path": categoria_ml,
-    "ml_attrs": st.session_state.get("ml_attrs"),
-    "ml_listing_type": st.session_state.ml_listing_type
+    "ml_cat_name": ml_cat_name,
+    "ml_listing_type": tipo_pub,
+    "ml_attrs": st.session_state.get("ml_attrs", {})
 }
 
-# --- BOTÓN GUARDAR ---
 if st.button("💾 Agregar Producto"):
     try:
-        nuevo_limpio = filtrar_campos(nuevo)
-        if not nuevo_limpio:
+        nuevos_limpios = filtrar_campos(nuevo)
+        if not nuevos_limpios:
             st.error("❌ No hay datos para guardar.")
         else:
-            db.collection("productos").document(nuevo["id"]).set(nuevo_limpio)
-            st.success(f"✅ Producto {nuevo['id']} agregado correctamente.")
+            db.collection("productos").document(nuevos_limpios["id"]).set(nuevos_limpios)
+            st.success(f"✅ Producto {nuevo.get('nombre_producto','')} agregado correctamente.")
             st.balloons()
             st.session_state.nuevo_id = f"P{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
             st.rerun()
     except Exception as e:
-        st.error(f"❌ Error guardando producto: {e}")
+        st.error(f"❌ Error al guardar: {e}")
 
 st.markdown("</div>", unsafe_allow_html=True)
