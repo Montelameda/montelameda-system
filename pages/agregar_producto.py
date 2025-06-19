@@ -287,6 +287,20 @@ with tabs[4]:
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
 
+# ---- Ahora armamos las dimensiones automáticas desde los atributos rellenados ----
+attrs = st.session_state.get("ml_attrs", {})
+alto = attrs.get("HEIGHT", 0)
+ancho = attrs.get("WIDTH", 0)
+largo = attrs.get("LENGTH", 0)
+peso = attrs.get("WEIGHT", 0)
+
+# Si alguna dimensión falta, lo avisas:
+if not (alto and ancho and largo and peso):
+    st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
+    dimensiones_str = ""
+else:
+    dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
+
 # --- Diccionario FINAL de producto ---
 nuevo = {
     "id": st.session_state.nuevo_id,
