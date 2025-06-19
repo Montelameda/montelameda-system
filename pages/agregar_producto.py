@@ -131,10 +131,44 @@ with tabs[2]:
         horizontal=True,
         label_visibility="visible"
     )
+
+    # --- Detección de categoría ML (NO borres esta lógica) ---
+    nombre_producto = st.session_state.get("nombre_producto", "")
+    ml_cat_id, ml_cat_name = "", ""
+    if nombre_producto:
+        try:
+            cats = ml_api.suggest_categories(nombre_producto)
+            if cats:
+                ml_cat_id, ml_cat_name = cats[0]
+        except Exception:
+            pass
+    st.session_state["ml_cat_id"] = ml_cat_id
+    st.session_state["ml_cat_name"] = ml_cat_name
+
+    # --- Mostrar categoría detectada ---
+    if ml_cat_id:
+        st.markdown(
+            f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
+            f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
+            unsafe_allow_html=True
+        )
+
+    # --- Calcular comisión ML ---
+    precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
+    tipo_pub = st.session_state.ml_listing_type.lower()
+    porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
+    comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
+    st.markdown(
+        f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
+        Comisión MercadoLibre: <b>{comision_ml:,} CLP</b> ({porcentaje:.2f}% del precio, costo fijo: {costo_fijo} CLP)
+        </div>""",
+        unsafe_allow_html=True
+    )
+
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
     col_fb, col_ml, col_ml30 = st.columns(3)
 
-    # Facebook
+    # --- Facebook (izquierda) ---
     with col_fb:
         st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
         st.text_input("Precio para Facebook", placeholder="Precio para Facebook", key="precio_facebook")
@@ -151,21 +185,13 @@ with tabs[2]:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_fb = None
 
-    # MercadoLibre
+    # --- MercadoLibre (centro) ---
     with col_ml:
         st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
         st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
-
-        # --- Comisión Mercado Libre ---
-        precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
-        precio_compra = to_float(st.session_state.get("precio_compra", 0))
-        tipo_pub = st.session_state.ml_listing_type.lower()
-        ml_cat_id = st.session_state.get("ml_cat_id", "")
-        porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
-        comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
 
-        # --- Cálculo de envío REAL usando dimensiones_str ---
+        # --- Cálculo de envío ---
         attrs = st.session_state.get("ml_attrs", {})
         alto = attrs.get("HEIGHT", 0)
         ancho = attrs.get("WIDTH", 0)
@@ -173,27 +199,20 @@ with tabs[2]:
         peso = attrs.get("WEIGHT", 0)
         if not (alto and ancho and largo and peso):
             st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
-            dimensiones_str = ""
+            costo_envio = 0
         else:
             dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
-
-        if dimensiones_str:
-            try:
-                costo_envio, _ = ml_api.get_shipping_cost_mlc(
-                    item_price=precio_ml,
-                    dimensions=dimensiones_str,
-                    category_id=ml_cat_id,
-                    listing_type_id="gold_special" if tipo_pub in ["clásico", "clasico"] else "gold_pro",
-                    condition="new"
-                )
-            except Exception:
-                costo_envio = 0
-        else:
-            costo_envio = 0
-
+            costo_envio, _ = ml_api.get_shipping_cost_mlc(
+                item_price=precio_ml,
+                dimensions=dimensiones_str,
+                category_id=ml_cat_id,
+                listing_type_id="gold_special" if tipo_pub in ["clásico", "clasico"] else "gold_pro",
+                condition="new"
+            )
         st.text_input("Costo de envío MercadoLibre", value=f"{costo_envio:.0f}", key="envio_mercado_libre", disabled=True)
 
         try:
+            precio_compra = to_float(st.session_state.get("precio_compra", 0))
             ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - costo_envio
             color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml}'>✅ {ganancia_ml_estimada:.0f} CLP</span>", unsafe_allow_html=True)
@@ -206,17 +225,18 @@ with tabs[2]:
             ganancia_ml_estimada = None
             ganancia_ml_neta = None
 
-    # MercadoLibre con 30% desc.
+    # --- MercadoLibre con 30% desc. (derecha) ---
     with col_ml30:
         st.markdown("💖 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
         precio_ml_30 = precio_ml * 0.7
-        porcentaje_30, costo_fijo_30 = porcentaje, costo_fijo  # usa el mismo tipo/cat
+        porcentaje_30, costo_fijo_30 = porcentaje, costo_fijo
         comision_ml_30 = round(precio_ml_30 * porcentaje_30 / 100 + costo_fijo_30)
         st.text_input("Precio", value=f"{precio_ml_30:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
         st.text_input("Comisión", value=f"{comision_ml_30:.0f}", key="comision_mercado_libre_30_desc", disabled=True)
         st.text_input("Envío", value="0", key="envio_mercado_libre_30_desc", disabled=True)
         try:
-            envio_ml_30 = 0  # Por ahora fijo, luego API
+            envio_ml_30 = 0
+            precio_compra = to_float(st.session_state.get("precio_compra", 0))
             ganancia_ml_desc_estimada = precio_ml_30 - precio_compra - comision_ml_30 - envio_ml_30
             color_ml_desc = "valor-positivo" if ganancia_ml_desc_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml_desc}'>✅ {ganancia_ml_desc_estimada:.0f} CLP</span>", unsafe_allow_html=True)
