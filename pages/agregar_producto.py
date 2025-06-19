@@ -267,26 +267,67 @@ with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     ml_cat_id = st.session_state.get("ml_cat_id", "")
     ml_attrs = {}
+    dimensiones_keys = {
+        "alto": ["ALTO", "HEIGHT", "ALTURA"],
+        "ancho": ["ANCHO", "WIDTH"],
+        "largo": ["LARGO", "LENGTH", "LONGITUD"],
+        "peso": ["PESO", "WEIGHT"]
+    }
+    dimensiones_valores = {}
+
     if ml_cat_id:
         req_attrs = ml_api.get_required_attrs(ml_cat_id)
         for attr in req_attrs:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
-            key_field = f"{st.session_state.nuevo_id}_{aid}"  # Key única por atributo+producto
-            if vtype == "boolean":
-                opt = ["Sí", "No"]
-                ml_attrs[aid] = st.selectbox(nombre, opt, key=key_field)
-            elif vtype in ("list",):
-                opt = [v["name"] for v in attr.get("values", [])]
-                ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=key_field)
-            elif vtype in ("number_unit", "number"):
-                ml_attrs[aid] = st.number_input(nombre, key=key_field)
+
+            # --- Mapeo automático de dimensiones ---
+            for k, keys in dimensiones_keys.items():
+                if any(key in nombre.upper() or key in aid.upper() for key in keys):
+                    # ¡Este atributo es una dimensión!
+                    if vtype in ("number_unit", "number"):
+                        val = st.number_input(nombre, key=f"ml_{aid}")
+                    else:
+                        val = st.text_input(nombre, key=f"ml_{aid}")
+                    ml_attrs[aid] = val
+                    dimensiones_valores[k] = val
+                    break
             else:
-                ml_attrs[aid] = st.text_input(nombre, key=key_field)
+                # Otros atributos normales
+                if vtype == "boolean":
+                    opt = ["Sí", "No"]
+                    ml_attrs[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
+                elif vtype == "list":
+                    opt = [v["name"] for v in attr.get("values", [])]
+                    ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
+                elif vtype in ("number_unit", "number"):
+                    ml_attrs[aid] = st.number_input(nombre, key=f"ml_{aid}")
+                else:
+                    ml_attrs[aid] = st.text_input(nombre, key=f"ml_{aid}")
+
         st.session_state["ml_attrs"] = ml_attrs
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
+
+    # ---- Construcción automática de dimensiones_str para cálculo de envío ----
+    try:
+        alto = float(dimensiones_valores.get("alto") or 0)
+        ancho = float(dimensiones_valores.get("ancho") or 0)
+        largo = float(dimensiones_valores.get("largo") or 0)
+        peso = float(dimensiones_valores.get("peso") or 0)
+    except Exception:
+        alto = ancho = largo = peso = 0
+
+    if not (alto and ancho and largo and peso):
+        st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
+        dimensiones_str = ""
+    else:
+        dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
+        st.success(f"Dimensiones para envío: {dimensiones_str}")
+
+    # Guarda dimensiones_str en session_state para usarlo en TAB 3 (Precios)
+    st.session_state["dimensiones_str"] = dimensiones_str
 
 # --- Diccionario FINAL de producto ---
 nuevo = {
