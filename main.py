@@ -47,6 +47,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ─── Carga productos desde Firestore ─────────────────────────────────────────
+from firebase_admin import firestore
+
+db = firestore.client()
+productos = []
+try:
+    docs = db.collection("productos").stream()
+    for doc in docs:
+        data = doc.to_dict()
+        data["doc_id"] = doc.id
+        productos.append(data)
+except Exception as e:
+    st.error(f"Error cargando productos de Firestore: {e}")
+
+PRODUCTOS_POR_PAGINA = 12  # Puedes ajustar este número
+pagina = st.session_state.get("pagina_actual", 0)
+productos_filtrados = productos  # Aquí puedes aplicar filtros si tienes
+
 # ─── Encabezado / Logo ───────────────────────────────────────────────────────
 st.markdown("""
     <div style="display:flex;align-items:center;gap:22px;margin:8px 0 6px 0;">
@@ -71,6 +89,10 @@ def render_tarjeta_producto(prod):
     nombre  = prod.get('nombre_producto', 'Sin nombre')
     precio  = prod.get('precio_facebook', 'N/A')
     doc_id  = prod['doc_id']
+
+    # Inicializa la lista de seleccionados si no existe
+    if "productos_seleccionados" not in st.session_state:
+        st.session_state["productos_seleccionados"] = []
 
     # checkbox selección
     seleccionado = st.checkbox("Seleccionar", key=f"select_{doc_id}",
@@ -106,7 +128,7 @@ def render_tarjeta_producto(prod):
 
     with col_ml:
         if st.button("🛒 Publicar ML", key=f"ml_{doc_id}"):
-            st.experimental_set_query_params(id=doc_id)
+            st.query_params["id"] = doc_id
             st.switch_page("pages/2_Mercado_Libre.py")
 
 # ─── Render cards ───────────────────────────────────────────────────────────
@@ -119,8 +141,8 @@ else:
     st.warning("No hay productos para mostrar.")
 
 # ─── Excel descarga fotos -----------------------------------------------------------------
-if st.session_state["productos_seleccionados"]:
-    seleccionados = [p for p in todos_productos
+if st.session_state.get("productos_seleccionados"):
+    seleccionados = [p for p in productos
                      if p["doc_id"] in st.session_state["productos_seleccionados"]]
 
     def obtener_fotos(p):
@@ -156,11 +178,11 @@ if st.session_state["productos_seleccionados"]:
 col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     if pagina > 0 and st.button("⬅️ Anterior"):
-        st.session_state["pagina_actual"] -= 1
+        st.session_state["pagina_actual"] = pagina - 1
 with col3:
     if (pagina + 1) * PRODUCTOS_POR_PAGINA < len(productos_filtrados):
         if st.button("Siguiente ➡️"):
-            st.session_state["pagina_actual"] += 1
+            st.session_state["pagina_actual"] = pagina + 1
 with col2:
     total_pag = max(1, (len(productos_filtrados) - 1) // PRODUCTOS_POR_PAGINA + 1)
     st.markdown(f"<div style='text-align:center;font-size:1.1rem;'>Página {pagina + 1} de {total_pag}</div>",
