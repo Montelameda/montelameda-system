@@ -198,8 +198,9 @@ def render_tarjeta_producto(prod):
             st.session_state["producto_actual"] = doc_id
             st.switch_page("ver_producto")
     with col_ml:
-        if st.button("🛒 Publicar ML", key=f"ml_{doc_id}"):
-            st.switch_page(f"2_Mercado_Libre?id={doc_id}")
+    if st.button("🛒 Publicar ML", key=f"ml_{doc_id}"):
+        st.experimental_set_query_params(id=doc_id)
+        st.switch_page("pages/2_Mercado_Libre.py")
         
 # ─── Render cards ───────────────────────────────────────────────────────────
 if productos:
