@@ -265,32 +265,40 @@ with tabs[3]:
 # TAB 5: MercadoLibre (atributos oficiales ML, con keys únicos)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
+
     ml_cat_id = st.session_state.get("ml_cat_id", "")
     ml_attrs = {}
-    dimensiones_keys = {
-        "alto": ["ALTO", "HEIGHT", "ALTURA"],
-        "ancho": ["ANCHO", "WIDTH"],
-        "largo": ["LARGO", "LENGTH", "LONGITUD"],
-        "peso": ["PESO", "WEIGHT"]
-    }
-    dimensiones_valores = {}
-
     if ml_cat_id:
-        # Trae TODOS los requeridos, no solo los 'required'
         attrs = ml_api.get_all_attrs(ml_cat_id)
-        req_attrs = [
-            a for a in attrs if (
-                a.get("tags", {}).get("required") or
-                a.get("tags", {}).get("conditional_required") or
-                a.get("tags", {}).get("new_required")
-            )
-        ]
-        for attr in req_attrs:
+        
+        # PRIORIDAD: required > conditional_required > new_required > relevance alto
+        campos = []
+        for a in attrs:
+            tags = a.get("tags", {})
+            if tags.get("required") or tags.get("conditional_required") or tags.get("new_required"):
+                campos.append((1, a))  # prioridad máxima
+            elif float(a.get("relevance", 0)) >= 0.8:
+                campos.append((2, a))  # prioridad secundaria
+            else:
+                campos.append((3, a))  # otros
+
+        # Ordena: primero los más importantes
+        campos = sorted(campos, key=lambda x: x[0])
+        
+        dimensiones_valores = {}
+        dimensiones_keys = {
+            "alto": ["ALTO", "HEIGHT", "ALTURA"],
+            "ancho": ["ANCHO", "WIDTH"],
+            "largo": ["LARGO", "LENGTH", "LONGITUD"],
+            "peso": ["PESO", "WEIGHT"]
+        }
+
+        for _, attr in campos:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
 
-            # --- Dimensiones automáticas
+            # Dimensiones automáticas
             for k, keys in dimensiones_keys.items():
                 if any(key in nombre.upper() or key in aid.upper() for key in keys):
                     val = st.number_input(nombre, key=f"ml_{aid}")
@@ -305,7 +313,7 @@ with tabs[4]:
                 elif aid == "EMPTY_GTIN_REASON":
                     opciones = [v["name"] for v in attr.get("values", [])]
                     ml_attrs[aid] = st.selectbox("Motivo por el que no tiene GTIN", opciones, key=f"ml_{aid}")
-                # Otros atributos normales
+                # Otros atributos
                 elif vtype == "boolean":
                     opt = ["Sí", "No"]
                     ml_attrs[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
@@ -318,26 +326,25 @@ with tabs[4]:
                     ml_attrs[aid] = st.text_input(nombre, key=f"ml_{aid}")
 
         st.session_state["ml_attrs"] = ml_attrs
+
+        # Calcula dimensiones para el envío
+        try:
+            alto = float(dimensiones_valores.get("alto") or 0)
+            ancho = float(dimensiones_valores.get("ancho") or 0)
+            largo = float(dimensiones_valores.get("largo") or 0)
+            peso = float(dimensiones_valores.get("peso") or 0)
+        except Exception:
+            alto = ancho = largo = peso = 0
+
+        if not (alto and ancho and largo and peso):
+            st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
+            dimensiones_str = ""
+        else:
+            dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
+            st.success(f"Dimensiones para envío: {dimensiones_str}")
+        st.session_state["dimensiones_str"] = dimensiones_str
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
-
-    # ---- Construye dimensiones_str para envío
-    try:
-        alto = float(dimensiones_valores.get("alto") or 0)
-        ancho = float(dimensiones_valores.get("ancho") or 0)
-        largo = float(dimensiones_valores.get("largo") or 0)
-        peso = float(dimensiones_valores.get("peso") or 0)
-    except Exception:
-        alto = ancho = largo = peso = 0
-
-    if not (alto and ancho and largo and peso):
-        st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
-        dimensiones_str = ""
-    else:
-        dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
-        st.success(f"Dimensiones para envío: {dimensiones_str}")
-
-    st.session_state["dimensiones_str"] = dimensiones_str
 
 # --- Diccionario FINAL de producto ---
 nuevo = {
