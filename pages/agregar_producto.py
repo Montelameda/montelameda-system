@@ -121,13 +121,48 @@ with tabs[1]:
     st.text_input("Etiquetas", placeholder="Palabras clave separadas por coma", key="etiquetas")
     st.text_input("Foto de proveedor", placeholder="URL de la foto", key="foto_proveedor")
 
-# --- TAB 3: PRECIOS ---
+# TAB 5: MercadoLibre (muestra y guarda atributos oficiales, incluidos dimensiones y peso)
+with tabs[4]:
+    st.subheader("Atributos MercadoLibre")
+    ml_cat_id = st.session_state.get("ml_cat_id", "")
+    ml_attrs = {}
+    if ml_cat_id:
+        req_attrs = ml_api.get_required_attrs(ml_cat_id)
+        for attr in req_attrs:
+            aid = attr["id"]
+            nombre = attr["name"]
+            vtype = attr["value_type"]
+            # Render dinámico según el tipo de dato
+            if vtype == "boolean":
+                opt = ["Sí", "No"]
+                ml_attrs[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
+            elif vtype in ("list",):
+                opt = [v["name"] for v in attr.get("values", [])]
+                ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
+            elif vtype in ("number_unit", "number"):
+                ml_attrs[aid] = st.number_input(nombre, key=f"ml_{aid}")
+            else:
+                ml_attrs[aid] = st.text_input(nombre, key=f"ml_{aid}")
+        st.session_state["ml_attrs"] = ml_attrs
+    else:
+        st.info("Selecciona un nombre de producto para detectar categoría.")
+
+# ---- Ahora armamos las dimensiones automáticas desde los atributos rellenados ----
+attrs = st.session_state.get("ml_attrs", {})
+alto = attrs.get("HEIGHT", 0)
+ancho = attrs.get("WIDTH", 0)
+largo = attrs.get("LENGTH", 0)
+peso = attrs.get("WEIGHT", 0)
+
+# Si alguna dimensión falta, lo avisas:
+if not (alto and ancho and largo and peso):
+    st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
+    dimensiones_str = ""
+else:
+    dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
+
+# TAB 3: PRECIOS (solo el bloque de Mercado Libre, usa dimensiones_str)
 with tabs[2]:
-    # ==== Precio de compra GLOBAL (va arriba, afecta todo lo demás) ====
-    st.markdown("#### Precio de compra/costo del producto", unsafe_allow_html=True)
-    st.text_input("Precio de compra", placeholder="Costo del producto", key="precio_compra")
-    
-    # ---- Publicación ML ARRIBA del bloque ML ----
     st.markdown("### Mercado Libre - Tipo de publicación", unsafe_allow_html=True)
     st.radio(
         "Tipo publicación ML",
@@ -136,87 +171,42 @@ with tabs[2]:
         horizontal=True,
         label_visibility="visible"
     )
-
-    # ==== Categoría ML y Comisión: DEBAJO de tipo publicación ====
-    ml_cat_id, ml_cat_name = "", ""
-    if nombre_producto:
-        try:
-            cats = ml_api.suggest_categories(nombre_producto)
-            if cats:
-                ml_cat_id, ml_cat_name = cats[0]
-        except Exception:
-            pass
-    st.session_state["ml_cat_id"] = ml_cat_id
-
-    porcentaje, costo_fijo = 0, 0
-    comision_ml = 0
-    precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
-    precio_compra = to_float(st.session_state.get("precio_compra", 0))
-    tipo_pub = st.session_state.ml_listing_type.lower()
-
-    if ml_cat_id:
-        porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
-        comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
-        st.markdown(
-            f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
-            f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
-            unsafe_allow_html=True
-        )
-        if porcentaje > 0:
-            st.markdown(
-                f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
-                Comisión MercadoLibre: <b>{comision_ml:,} CLP</b> ({porcentaje:.2f}% del precio)
-                </div>""",
-                unsafe_allow_html=True
-            )
-        elif costo_fijo > 0:
-            st.markdown(
-                f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
-                Comisión MercadoLibre: <b>{costo_fijo:,} CLP</b> (costo fijo)
-                </div>""",
-                unsafe_allow_html=True
-            )
-        else:
-            st.markdown(
-                f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
-                <b>Sin datos de comisión para esta categoría/precio</b>
-                </div>""",
-                unsafe_allow_html=True
-            )
-
-    # --- Detalles de precios ---
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
     col_fb, col_ml, col_ml30 = st.columns(3)
-
-    # Facebook
-    with col_fb:
-        st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
-        st.text_input("Precio para Facebook", placeholder="Precio para Facebook", key="precio_facebook")
-        st.text_input("Comisión", placeholder="Comisión", key="comision_vendedor_facebook")
-        st.text_input("Precio al por mayor de 3", placeholder="Precio al por mayor", key="precio_mayor_3")
-        try:
-            precio_fb = to_float(st.session_state.get("precio_facebook", 0))
-            comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
-            precio_compra_fb = to_float(st.session_state.get("precio_compra", 0))
-            ganancia_fb = precio_fb - precio_compra_fb - comision_fb
-            color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
-            st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
-        except:
-            st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
-            ganancia_fb = None
 
     # MercadoLibre
     with col_ml:
         st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
         st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
+
+        # --- Comisión Mercado Libre ---
+        precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
+        precio_compra = to_float(st.session_state.get("precio_compra", 0))
+        tipo_pub = st.session_state.ml_listing_type.lower()
+        porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
+        comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
-        st.text_input("Costo de envío MercadoLibre", value="0", key="envio_mercado_libre")
+
+        # --- Cálculo de envío REAL usando dimensiones_str ---
+        # (Solo si tienes todas las dimensiones)
+        if dimensiones_str:
+            costo_envio, _ = ml_api.get_shipping_cost_mlc(
+                item_price=precio_ml,
+                dimensions=dimensiones_str,
+                category_id=ml_cat_id,
+                listing_type_id="gold_special" if tipo_pub in ["clásico", "clasico"] else "gold_pro",
+                condition="new"
+            )
+        else:
+            costo_envio = 0
+
+        st.text_input("Costo de envío MercadoLibre", value=f"{costo_envio:.0f}", key="envio_mercado_libre", disabled=True)
+
         try:
-            envio_ml = to_float(st.session_state.get("envio_mercado_libre", 0))
-            ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - envio_ml
+            ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - costo_envio
             color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml}'>✅ {ganancia_ml_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta = precio_ml - comision_ml - envio_ml
+            ganancia_bruta = precio_ml - comision_ml - costo_envio
             iva_19 = ganancia_bruta * 0.19
             ganancia_ml_neta = ganancia_bruta - iva_19 - precio_compra
             st.markdown(f"<span class='valor-iva'>🟩 Ganancia de ML descontando IVA 19%: {ganancia_ml_neta:.0f} CLP</span>", unsafe_allow_html=True)
