@@ -269,22 +269,21 @@ with tabs[4]:
     ml_attrs = {}
     if ml_cat_id:
         req_attrs = ml_api.get_required_attrs(ml_cat_id)
-        for idx, attr in enumerate(req_attrs):  # <- índice agregado aquí para key único
+        for attr in req_attrs:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
-            unique_key = f"ml_{aid}_{idx}"
-            # Render dinámico según el tipo de dato
+            key_field = f"{st.session_state.nuevo_id}_{aid}"  # Key única por atributo+producto
             if vtype == "boolean":
                 opt = ["Sí", "No"]
-                ml_attrs[aid] = st.selectbox(nombre, opt, key=unique_key)
+                ml_attrs[aid] = st.selectbox(nombre, opt, key=key_field)
             elif vtype in ("list",):
                 opt = [v["name"] for v in attr.get("values", [])]
-                ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=unique_key)
+                ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=key_field)
             elif vtype in ("number_unit", "number"):
-                ml_attrs[aid] = st.number_input(nombre, key=unique_key)
+                ml_attrs[aid] = st.number_input(nombre, key=key_field)
             else:
-                ml_attrs[aid] = st.text_input(nombre, key=unique_key)
+                ml_attrs[aid] = st.text_input(nombre, key=key_field)
         st.session_state["ml_attrs"] = ml_attrs
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
