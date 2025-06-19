@@ -43,7 +43,7 @@ def limpiar_valor(valor):
 def filtrar_campos(diccionario):
     return {k: v for k, v in diccionario.items() if k and v not in [None, ""]}
 
-# --- FORMULARIO ---
+# --- ESTILOS ---
 st.markdown("""
 <style>
 body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
@@ -76,10 +76,10 @@ campos_llenos = sum(1 for k in obligatorios_ids if st.session_state.get(k))
 progreso = int((campos_llenos / len(obligatorios_ids)) * 100)
 st.progress(progreso, text=f"Formulario completado: {progreso}%")
 
-# --- TABS ---
-tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones", "🛒 MercadoLibre"])
+# --- TABS PRINCIPALES ---
+tabs = st.tabs(["🧾 Facebook/General", "🛒 MercadoLibre"])
 
-# TAB 1: Identificación
+# TAB 1: Facebook/General (todo lo que YA USAS para Facebook y generales)
 with tabs[0]:
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -87,7 +87,7 @@ with tabs[0]:
         nombre_producto = st.text_input("Nombre del producto *", placeholder="Ej: Camiseta deportiva", key="nombre_producto", max_chars=60)
         docs_cat = db.collection("categorias").stream()
         categorias = sorted([str(doc.to_dict()["nombre"]) for doc in docs_cat if "nombre" in doc.to_dict()])
-        st.selectbox("Categoría *", options=categorias, key="categoria")
+        st.selectbox("Categoría Facebook *", options=categorias, key="categoria")
     with col2:
         st.text_input("Código mínimo *", placeholder="Ej: 001", key="codigo_minimo")
         st.text_input("Marca *", placeholder="Ej: Nike", key="marca")
@@ -108,8 +108,6 @@ with tabs[0]:
     with col3:
         st.selectbox("Estado *", options=["Nuevo", "Usado"], key="estado")
 
-# TAB 2: Visuales y Descripción
-with tabs[1]:
     st.text_area("Descripción *", placeholder="Detalles del producto...", key="descripcion")
     st.text_input("Imagen principal (URL)", placeholder="https://...", key="imagen_principal_url")
     if st.session_state.get("imagen_principal_url", "").startswith("http"):
@@ -121,54 +119,8 @@ with tabs[1]:
     st.text_input("Etiquetas", placeholder="Palabras clave separadas por coma", key="etiquetas")
     st.text_input("Foto de proveedor", placeholder="URL de la foto", key="foto_proveedor")
 
-# TAB 3: PRECIOS
-with tabs[2]:
-    st.markdown("### Mercado Libre - Tipo de publicación", unsafe_allow_html=True)
-    st.radio(
-        "Tipo publicación ML",
-        options=["Clásico", "Premium"],
-        key="ml_listing_type",
-        horizontal=True,
-        label_visibility="visible"
-    )
-
-    # --- Detección de categoría ML (NO borres esta lógica) ---
-    nombre_producto = st.session_state.get("nombre_producto", "")
-    ml_cat_id, ml_cat_name = "", ""
-    if nombre_producto:
-        try:
-            cats = ml_api.suggest_categories(nombre_producto)
-            if cats:
-                ml_cat_id, ml_cat_name = cats[0]
-        except Exception:
-            pass
-    st.session_state["ml_cat_id"] = ml_cat_id
-    st.session_state["ml_cat_name"] = ml_cat_name
-
-    # --- Mostrar categoría detectada ---
-    if ml_cat_id:
-        st.markdown(
-            f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
-            f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
-            unsafe_allow_html=True
-        )
-
-    # --- Calcular comisión ML ---
-    precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
-    tipo_pub = st.session_state.ml_listing_type.lower()
-    porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
-    comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
-    st.markdown(
-        f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
-        Comisión MercadoLibre: <b>{comision_ml:,} CLP</b> ({porcentaje:.2f}% del precio, costo fijo: {costo_fijo} CLP)
-        </div>""",
-        unsafe_allow_html=True
-    )
-
-    st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
+    # --- PRECIOS, GANANCIAS Y LOGICA FACEBOOK (y ML base) ---
     col_fb, col_ml, col_ml30 = st.columns(3)
-
-    # --- Facebook (izquierda) ---
     with col_fb:
         st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
         st.text_input("Precio para Facebook", placeholder="Precio para Facebook", key="precio_facebook")
@@ -185,13 +137,17 @@ with tabs[2]:
             st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
             ganancia_fb = None
 
-    # --- MercadoLibre (centro) ---
     with col_ml:
         st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
         st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
+        # Simulación de comisión ML (solo visual)
+        precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
+        tipo_pub = st.session_state.get("ml_listing_type", "clasico").lower()  # lo ajusta ML en su tab
+        ml_cat_id = st.session_state.get("ml_cat_id", "")
+        porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
+        comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
-
-        # --- Cálculo de envío ---
+        # Cálculo de envío
         attrs = st.session_state.get("ml_attrs", {})
         alto = attrs.get("HEIGHT", 0)
         ancho = attrs.get("WIDTH", 0)
@@ -210,7 +166,6 @@ with tabs[2]:
                 condition="new"
             )
         st.text_input("Costo de envío MercadoLibre", value=f"{costo_envio:.0f}", key="envio_mercado_libre", disabled=True)
-
         try:
             precio_compra = to_float(st.session_state.get("precio_compra", 0))
             ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - costo_envio
@@ -225,7 +180,6 @@ with tabs[2]:
             ganancia_ml_estimada = None
             ganancia_ml_neta = None
 
-    # --- MercadoLibre con 30% desc. (derecha) ---
     with col_ml30:
         st.markdown("💖 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
         precio_ml_30 = precio_ml * 0.7
@@ -249,8 +203,7 @@ with tabs[2]:
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
 
-# --- TAB 4: Stock y otros
-with tabs[3]:
+    # --- STOCK Y OTROS GENERALES ---
     st.text_input("Stock", placeholder="Cantidad en stock", key="stock")
     st.text_input("Mostrar en catálogo", placeholder="Sí/No", key="mostrar_catalogo")
     st.text_input("ID Publicación Mercado Libre", placeholder="ID de la publicación", key="id_publicacion_mercado_libre")
@@ -262,29 +215,48 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (atributos oficiales ML, con keys únicos)
-with tabs[4]:
-    st.subheader("Atributos MercadoLibre")
+# TAB 2: MercadoLibre (exclusivo ML, nada de duplicar nombre/precio/desc)
+with tabs[1]:
+    st.markdown("<h2>Atributos Mercado Libre</h2>", unsafe_allow_html=True)
+    ml_cat_id, ml_cat_name = "", ""
+    nombre_producto = st.session_state.get("nombre_producto", "")
+    if nombre_producto:
+        try:
+            cats = ml_api.suggest_categories(nombre_producto)
+            if cats:
+                ml_cat_id, ml_cat_name = cats[0]
+        except Exception:
+            pass
+    st.session_state["ml_cat_id"] = ml_cat_id
+    st.session_state["ml_cat_name"] = ml_cat_name
+    if ml_cat_id:
+        st.markdown(
+            f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
+            f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
+            unsafe_allow_html=True
+        )
+    st.radio(
+        "Tipo publicación ML",
+        options=["Clásico", "Premium"],
+        key="ml_listing_type",
+        horizontal=True,
+        label_visibility="visible"
+    )
 
-    ml_cat_id = st.session_state.get("ml_cat_id", "")
+    # ATRIBUTOS OFICIALES ML
     ml_attrs = {}
     if ml_cat_id:
         attrs = ml_api.get_all_attrs(ml_cat_id)
-        
-        # PRIORIDAD: required > conditional_required > new_required > relevance alto
         campos = []
         for a in attrs:
             tags = a.get("tags", {})
             if tags.get("required") or tags.get("conditional_required") or tags.get("new_required"):
                 campos.append((1, a))  # prioridad máxima
             elif float(a.get("relevance", 0)) >= 0.8:
-                campos.append((2, a))  # prioridad secundaria
+                campos.append((2, a))
             else:
-                campos.append((3, a))  # otros
-
-        # Ordena: primero los más importantes
+                campos.append((3, a))
         campos = sorted(campos, key=lambda x: x[0])
-        
         dimensiones_valores = {}
         dimensiones_keys = {
             "alto": ["ALTO", "HEIGHT", "ALTURA"],
@@ -292,13 +264,10 @@ with tabs[4]:
             "largo": ["LARGO", "LENGTH", "LONGITUD"],
             "peso": ["PESO", "WEIGHT"]
         }
-
         for _, attr in campos:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
-
-            # Dimensiones automáticas
             for k, keys in dimensiones_keys.items():
                 if any(key in nombre.upper() or key in aid.upper() for key in keys):
                     val = st.number_input(nombre, key=f"ml_{aid}")
@@ -306,14 +275,12 @@ with tabs[4]:
                     dimensiones_valores[k] = val
                     break
             else:
-                # Campo GTIN y motivo especial
                 if aid == "GTIN":
                     gtin_val = st.text_input("Código universal de producto (GTIN)", key=f"ml_{aid}")
                     ml_attrs[aid] = gtin_val
                 elif aid == "EMPTY_GTIN_REASON":
                     opciones = [v["name"] for v in attr.get("values", [])]
                     ml_attrs[aid] = st.selectbox("Motivo por el que no tiene GTIN", opciones, key=f"ml_{aid}")
-                # Otros atributos
                 elif vtype == "boolean":
                     opt = ["Sí", "No"]
                     ml_attrs[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
@@ -324,10 +291,7 @@ with tabs[4]:
                     ml_attrs[aid] = st.number_input(nombre, key=f"ml_{aid}")
                 else:
                     ml_attrs[aid] = st.text_input(nombre, key=f"ml_{aid}")
-
         st.session_state["ml_attrs"] = ml_attrs
-
-        # Calcula dimensiones para el envío
         try:
             alto = float(dimensiones_valores.get("alto") or 0)
             ancho = float(dimensiones_valores.get("ancho") or 0)
@@ -335,7 +299,6 @@ with tabs[4]:
             peso = float(dimensiones_valores.get("peso") or 0)
         except Exception:
             alto = ancho = largo = peso = 0
-
         if not (alto and ancho and largo and peso):
             st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
             dimensiones_str = ""
@@ -386,9 +349,12 @@ nuevo = {
     "cantidad_vendida": limpiar_valor(st.session_state.get("cantidad_vendida")),
     "ultima_entrada": limpiar_valor(st.session_state.get("ultima_entrada")),
     "ultima_salida": limpiar_valor(st.session_state.get("ultima_salida")),
-    "ml_cat_id": ml_cat_id,
-    "ml_listing_type": tipo_pub,
-    "ml_attrs": st.session_state.get("ml_attrs", {})
+    # --- BLOQUE EXCLUSIVO MERCADO LIBRE ---
+    "mercadolibre": {
+        "ml_cat_id": ml_cat_id,
+        "ml_listing_type": st.session_state.get("ml_listing_type"),
+        "ml_attrs": st.session_state.get("ml_attrs", {})
+    }
 }
 
 if st.button("💾 Agregar Producto"):
