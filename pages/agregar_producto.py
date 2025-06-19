@@ -276,26 +276,37 @@ with tabs[4]:
     dimensiones_valores = {}
 
     if ml_cat_id:
-        req_attrs = ml_api.get_required_attrs(ml_cat_id)
+        # Trae TODOS los requeridos, no solo los 'required'
+        attrs = ml_api.get_all_attrs(ml_cat_id)
+        req_attrs = [
+            a for a in attrs if (
+                a.get("tags", {}).get("required") or
+                a.get("tags", {}).get("conditional_required") or
+                a.get("tags", {}).get("new_required")
+            )
+        ]
         for attr in req_attrs:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
 
-            # --- Mapeo automático de dimensiones ---
+            # --- Dimensiones automáticas
             for k, keys in dimensiones_keys.items():
                 if any(key in nombre.upper() or key in aid.upper() for key in keys):
-                    # ¡Este atributo es una dimensión!
-                    if vtype in ("number_unit", "number"):
-                        val = st.number_input(nombre, key=f"ml_{aid}")
-                    else:
-                        val = st.text_input(nombre, key=f"ml_{aid}")
+                    val = st.number_input(nombre, key=f"ml_{aid}")
                     ml_attrs[aid] = val
                     dimensiones_valores[k] = val
                     break
             else:
+                # Campo GTIN y motivo especial
+                if aid == "GTIN":
+                    gtin_val = st.text_input("Código universal de producto (GTIN)", key=f"ml_{aid}")
+                    ml_attrs[aid] = gtin_val
+                elif aid == "EMPTY_GTIN_REASON":
+                    opciones = [v["name"] for v in attr.get("values", [])]
+                    ml_attrs[aid] = st.selectbox("Motivo por el que no tiene GTIN", opciones, key=f"ml_{aid}")
                 # Otros atributos normales
-                if vtype == "boolean":
+                elif vtype == "boolean":
                     opt = ["Sí", "No"]
                     ml_attrs[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
                 elif vtype == "list":
@@ -310,7 +321,7 @@ with tabs[4]:
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
 
-    # ---- Construcción automática de dimensiones_str para cálculo de envío ----
+    # ---- Construye dimensiones_str para envío
     try:
         alto = float(dimensiones_valores.get("alto") or 0)
         ancho = float(dimensiones_valores.get("ancho") or 0)
@@ -326,7 +337,6 @@ with tabs[4]:
         dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
         st.success(f"Dimensiones para envío: {dimensiones_str}")
 
-    # Guarda dimensiones_str en session_state para usarlo en TAB 3 (Precios)
     st.session_state["dimensiones_str"] = dimensiones_str
 
 # --- Diccionario FINAL de producto ---
