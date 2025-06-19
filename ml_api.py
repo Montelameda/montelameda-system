@@ -1,4 +1,3 @@
-# ml_api.py – Utilidades MercadoLibre Chile (MLC)
 import requests
 import json
 import pathlib
@@ -88,7 +87,7 @@ def get_categoria_nombre_ml(cat_id: str):
         pass
     return cat_id
 
-# ==== OBTENER ATRIBUTOS DE CATEGORÍA ====
+# ==== OBTENER TODOS LOS ATRIBUTOS DE CATEGORÍA ====
 def get_all_attrs(cat_id: str):
     if not cat_id:
         return []
@@ -111,6 +110,19 @@ def get_all_attrs(cat_id: str):
 def get_required_attrs(cat_id: str):
     data = get_all_attrs(cat_id)
     return [a for a in data if a.get("tags", {}).get("required")]
+
+# ==== BUSCAR ATRIBUTO DE DIMENSIÓN ====
+def buscar_atributo(attrs, keys):
+    """
+    Busca el valor del atributo que contenga alguna de las palabras clave (ALTO, ANCHO, etc.)
+    """
+    for attr in attrs:
+        nombre = attr.get("name", "").upper()
+        aid = attr.get("id", "").upper()
+        for key in keys:
+            if key in nombre or key in aid:
+                return attr
+    return None
 
 # ==== COMISIÓN REAL DESDE API MERCADOLIBRE (con costo fijo MLC) ====
 def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
