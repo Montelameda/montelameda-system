@@ -174,7 +174,8 @@ with tabs[2]:
         precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
         precio_compra = to_float(st.session_state.get("precio_compra", 0))
         tipo_pub = st.session_state.ml_listing_type.lower()
-        porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
+        # La API retorna también el tipo de tarifa, que aquí ignoramos
+        porcentaje, costo_fijo, _ = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
         comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
         # Info de comisión debajo (pequeño)
