@@ -1,4 +1,3 @@
-# pages/2_Mercado_Libre.py
 import streamlit as st
 import firebase_admin
 from firebase_admin import firestore
@@ -11,7 +10,8 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 # Obtener ID del producto desde la URL (compatibilidad amplia)
-prod_id = st.experimental_get_query_params().get("id", [None])[0]
+params = st.query_params
+prod_id = params.get("id", None)
 if not prod_id:
     st.error("Falta ?id=producto_id en la URL")
     st.stop()
