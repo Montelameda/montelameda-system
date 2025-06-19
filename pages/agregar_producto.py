@@ -174,20 +174,37 @@ with tabs[2]:
                 unsafe_allow_html=True
             )
 
-        # --- Comisión Mercado Libre ---
+                # --- Comisión Mercado Libre ---
         precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
         precio_compra = to_float(st.session_state.get("precio_compra", 0))
         tipo_pub = st.session_state.ml_listing_type.lower()
         porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
         comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
+
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
-        # Detalle comisión (menos padding)
-        st.markdown(
-            f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
-            Comisión MercadoLibre: <b>{porcentaje:.1f}%</b> + <b>{int(costo_fijo):,} fijo</b>
-            </div>""",
-            unsafe_allow_html=True
-        )
+
+        # Mostrar detalle de comisión: real, personalizada, o sin datos.
+        if porcentaje > 0:
+            st.markdown(
+                f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
+                Comisión MercadoLibre: <b>{comision_ml:,} CLP</b> ({porcentaje:.2f}% del precio)
+                </div>""",
+                unsafe_allow_html=True
+            )
+        elif costo_fijo > 0:
+            st.markdown(
+                f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
+                Comisión MercadoLibre: <b>{costo_fijo:,} CLP</b> (costo fijo)
+                </div>""",
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
+                <b>Sin datos de comisión para esta categoría/precio</b>
+                </div>""",
+                unsafe_allow_html=True
+            )
         st.text_input("Costo de envío MercadoLibre", value="0", key="envio_mercado_libre")
         try:
             envio_ml = to_float(st.session_state.get("envio_mercado_libre", 0))
