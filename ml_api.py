@@ -112,51 +112,37 @@ def get_required_attrs(cat_id: str):
     data = get_all_attrs(cat_id)
     return [a for a in data if a.get("tags", {}).get("required")]
 
-# ==== DICCIONARIO DE COMISIONES Y COSTOS FIJOS SOLO SI ESPECÍFICO ====
-# Agrega solo las categorías con comisión fija exacta si así lo quieres, si no, siempre la API primero.
-COMISIONES_CATEGORIAS_CHILE = {
-    # cat_id: { "clasico": (porcentaje, costo_fijo), "premium": (porcentaje, costo_fijo) }
-    # Ejemplo: "MLC1166": {"clasico": (14.5, 1000), "premium": (17.5, 1200)},
-    # Si no existe, será 0% y solo API
-}
-
-# ==== FUNCIÓN PARA COMISIÓN SEGÚN CATEGORÍA, PRECIO Y TIPO PUBLICACIÓN ====
+# ==== COMISIÓN REAL DESDE API MERCADOLIBRE ====
 def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
     """
-    Devuelve el porcentaje y costo fijo de comisión para MercadoLibre Chile,
-    usando el endpoint oficial. Si falla y hay un valor para la categoría en el diccionario, lo usa. 
-    Si no, devuelve 0.
+    Trae la comisión REAL desde la API autenticada de MercadoLibre para tu cuenta y categoría.
+    Si no la encuentra, devuelve 0.0 y costo fijo 0 (nunca inventa, nunca pone 13/16%).
     """
     tipo_pub = tipo_pub.lower()
-    # Mapear tipo de publicación a listing_type_id de ML Chile
-    listing_type_id = "gold_pro" if tipo_pub in ["clásico", "clasico"] else "gold_special"
+    # Mapear tipo de publicación a listing_type_id de ML Chile/Argentina
+    listing_type_id = "gold_special" if tipo_pub in ["clásico", "clasico"] else "gold_pro"
+    access_token = get_ml_token()
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
     try:
         url = (
             f"https://api.mercadolibre.com/sites/MLC/listing_prices"
-            f"?price={int(precio)}&category_id={cat_id}&listing_type_id={listing_type_id}"
+            f"?price={int(precio)}&category_id={cat_id}"
         )
-        resp = requests.get(url, timeout=6)
+        resp = requests.get(url, headers=headers, timeout=6)
         if resp.ok:
             data = resp.json()
-            if isinstance(data, list) and data:
-                cost = data[0]
-                sale_fee = float(cost.get("sale_fee_amount", 0))
-                porcentaje = round(100 * sale_fee / float(precio), 2) if precio > 0 else 0.0
-                costo_fijo = 0  # ML Chile pone todo como porcentaje en la API normalmente.
-                return porcentaje, costo_fijo
+            # Buscar el tipo exacto en la lista de resultados
+            for opt in data:
+                if opt.get("listing_type_id", "") == listing_type_id:
+                    sale_fee = float(opt.get("sale_fee_amount", 0))
+                    sale_details = opt.get("sale_fee_details", {})
+                    porcentaje = float(sale_details.get("percentage_fee", 0))
+                    return porcentaje, 0
+            print(f"[WARN] No se encontró comisión para tipo {listing_type_id} en respuesta ML.")
     except Exception as e:
-        print(f"[WARN] Error al consultar comisión exacta ML: {e}")
+        print(f"[WARN] Error consultando comisión ML: {e}")
 
-    # Si falla la API y hay una categoría específica, usa ese valor
-    if cat_id in COMISIONES_CATEGORIAS_CHILE and tipo_pub in COMISIONES_CATEGORIAS_CHILE[cat_id]:
-        porcentaje, costo_fijo = COMISIONES_CATEGORIAS_CHILE[cat_id][tipo_pub]
-        if porcentaje is None:
-            porcentaje = 0.0
-        if costo_fijo is None:
-            costo_fijo = 0
-        return porcentaje, costo_fijo
-
-    # Si no hay nada, devuelve 0
+    # Si la API no responde, nunca inventes: comisión 0
     return 0.0, 0
 
 # ==== PUBLICAR PRODUCTO (FUTURO) ====
