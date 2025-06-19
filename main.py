@@ -64,101 +64,7 @@ st.markdown("""
     <link rel="icon" href="https://res.cloudinary.com/dkl4xbslu/image/upload/v1747363106/ChatGPT_Image_15_may_2025_22_37_31-Photoroom_yw4hqn.png" type="image/png" sizes="32x32">
 """, unsafe_allow_html=True)
 
-# ─── Helpers banner vendedor ────────────────────────────────────────────────
-def obtener_banner_vendedor():
-    doc = firebase_config.db.collection("config").document("banner_vendedor").get()
-    return doc.to_dict().get("texto", "") if doc.exists else ""
-
-def actualizar_banner_vendedor(nuevo_texto):
-    firebase_config.db.collection("config").document("banner_vendedor").set({"texto": nuevo_texto})
-
-if rol_usuario == "admin":
-    with st.expander("Editar banner de vendedores (opcional)", expanded=False):
-        texto_actual = obtener_banner_vendedor()
-        nuevo_texto = st.text_area("Texto del banner para vendedores", value=texto_actual)
-        if st.button("Actualizar banner"):
-            actualizar_banner_vendedor(nuevo_texto)
-            st.success("Banner actualizado.")
-
-if rol_usuario == "vendedor":
-    banner_texto = obtener_banner_vendedor()
-    if banner_texto.strip():
-        st.info(banner_texto)
-
-# ─── CSS tarjetas producto ──────────────────────────────────────────────────
-st.markdown("""
-    <style>
-    .product-card-pro{
-        background:#fff;border-radius:16px;
-        box-shadow:0 2px 18px rgba(60,60,60,.09),0 1.5px 6px rgba(32,98,216,.03);
-        padding:20px 14px;min-height:410px;display:flex;
-        flex-direction:column;align-items:center;margin-bottom:18px;
-        transition:all .19s cubic-bezier(.4,2,.6,1);
-    }
-    .product-card-pro:hover{
-        box-shadow:0 4px 28px rgba(60,60,60,.15),0 1.5px 12px rgba(32,98,216,.06);
-        transform:translateY(-8px) scale(1.027);border:2.5px solid #205ec5;
-    }
-    .product-title{
-        font-weight:700;font-size:1.18rem;margin-bottom:9px;color:#1b2537;
-        text-align:center;overflow:hidden;display:-webkit-box;
-        -webkit-line-clamp:2;-webkit-box-orient:vertical;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ─── Paginación & Estado selección ──────────────────────────────────────────
-PRODUCTOS_POR_PAGINA = 20
-if "pagina_actual" not in st.session_state:
-    st.session_state["pagina_actual"] = 0
-if "productos_seleccionados" not in st.session_state:
-    st.session_state["productos_seleccionados"] = []
-
-pagina = st.session_state["pagina_actual"]
-
-# ─── Carga productos Firestore ──────────────────────────────────────────────
-todos_productos = [doc.to_dict() | {"doc_id": doc.id}
-                   for doc in firebase_config.db.collection("productos").stream()]
-
-busq_col, orden_col = st.columns([3.5, 2])
-with busq_col:
-    texto_busqueda = st.text_input("🔍 Buscar producto...", key="busqueda_nombre")
-with orden_col:
-    orden = st.selectbox("Ordenar por", ["Más reciente", "Precio más bajo", "Precio más alto"])
-
-if st.session_state.get("ultima_busqueda", "") != texto_busqueda:
-    st.session_state["pagina_actual"] = 0
-    st.session_state["ultima_busqueda"] = texto_busqueda
-    pagina = 0
-
-productos_filtrados = [p for p in todos_productos
-                       if texto_busqueda.lower() in p.get("nombre_producto", "").lower()] \
-                       if texto_busqueda.strip() else todos_productos
-
-campo_orden, asc = "id", False
-if orden == "Precio más bajo":
-    campo_orden, asc = "precio_facebook", True
-elif orden == "Precio más alto":
-    campo_orden, asc = "precio_facebook", False
-
-productos_filtrados.sort(key=lambda x: x.get(campo_orden, 0), reverse=not asc)
-productos = productos_filtrados[pagina * PRODUCTOS_POR_PAGINA:(pagina + 1) * PRODUCTOS_POR_PAGINA]
-
-# ─── Botones selección masiva ───────────────────────────────────────────────
-cols_sel = st.columns(3, gap="large")
-with cols_sel[0]:
-    if st.button("Seleccionar todos en esta página"):
-        for prod in productos:
-            if prod["doc_id"] not in st.session_state["productos_seleccionados"]:
-                st.session_state["productos_seleccionados"].append(prod["doc_id"])
-with cols_sel[1]:
-    if st.button("Seleccionar todos los productos"):
-        st.session_state["productos_seleccionados"] = [p["doc_id"] for p in todos_productos]
-with cols_sel[2]:
-    if st.button("Deseleccionar todos"):
-        st.session_state["productos_seleccionados"] = []
-
-# ─── Tarjeta de producto (ahora con botón ML) ───────────────────────────────
+# ─── Tarjeta Producto (Corregido) ────────────────────────────────────────────
 def render_tarjeta_producto(prod):
     img_url = prod.get('imagen_principal_url',
                        'https://cdn-icons-png.flaticon.com/512/1828/1828884.png')
@@ -166,7 +72,7 @@ def render_tarjeta_producto(prod):
     precio  = prod.get('precio_facebook', 'N/A')
     doc_id  = prod['doc_id']
 
-    # checkbox de selección
+    # checkbox selección
     seleccionado = st.checkbox("Seleccionar", key=f"select_{doc_id}",
                                value=doc_id in st.session_state["productos_seleccionados"])
     if seleccionado and doc_id not in st.session_state["productos_seleccionados"]:
@@ -191,16 +97,18 @@ def render_tarjeta_producto(prod):
         </div>
     """, unsafe_allow_html=True)
 
-    # botones de acción (detalles + publicar ML)
+    # botones acción
     col_det, col_ml = st.columns(2, gap="small")
     with col_det:
         if st.button("👁️‍🗨️ Ver detalles", key=f"detalle_{doc_id}"):
             st.session_state["producto_actual"] = doc_id
             st.switch_page("ver_producto")
+
     with col_ml:
-    if st.button("🛒 Publicar ML", key=f"ml_{doc_id}"):
-        st.experimental_set_query_params(id=doc_id)
-        st.switch_page("pages/2_Mercado_Libre.py")
+        if st.button("🛒 Publicar ML", key=f"ml_{doc_id}"):
+            st.experimental_set_query_params(id=doc_id)
+            st.switch_page("pages/2_Mercado_Libre.py")
+
 # ─── Render cards ───────────────────────────────────────────────────────────
 if productos:
     cols = st.columns(4)
