@@ -112,20 +112,20 @@ def get_required_attrs(cat_id: str):
     data = get_all_attrs(cat_id)
     return [a for a in data if a.get("tags", {}).get("required")]
 
-# ==== FALLBACK: DICCIONARIO DE COMISIONES Y COSTOS FIJOS ====
-# Actualiza este diccionario si quieres, pero el sistema intenta usar siempre el API
+# ==== DICCIONARIO DE COMISIONES Y COSTOS FIJOS SOLO SI ESPECÍFICO ====
+# Agrega solo las categorías con comisión fija exacta si así lo quieres, si no, siempre la API primero.
 COMISIONES_CATEGORIAS_CHILE = {
     # cat_id: { "clasico": (porcentaje, costo_fijo), "premium": (porcentaje, costo_fijo) }
-    "MLC1166": {"clasico": (13.0, None), "premium": (16.0, None)}, # Peluches/Juguetes ejemplo
-    "MLC1574": {"clasico": (13.0, None), "premium": (16.0, None)}, # Herramientas ejemplo
-    # Agrega tus categorías manualmente si quieres para pruebas
+    # Ejemplo: "MLC1166": {"clasico": (14.5, 1000), "premium": (17.5, 1200)},
+    # Si no existe, será 0% y solo API
 }
 
 # ==== FUNCIÓN PARA COMISIÓN SEGÚN CATEGORÍA, PRECIO Y TIPO PUBLICACIÓN ====
 def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
     """
     Devuelve el porcentaje y costo fijo de comisión para MercadoLibre Chile,
-    usando el endpoint oficial. Si falla, usa el diccionario de respaldo.
+    usando el endpoint oficial. Si falla y hay un valor para la categoría en el diccionario, lo usa. 
+    Si no, devuelve 0.
     """
     tipo_pub = tipo_pub.lower()
     # Mapear tipo de publicación a listing_type_id de ML Chile
@@ -142,21 +142,22 @@ def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
                 cost = data[0]
                 sale_fee = float(cost.get("sale_fee_amount", 0))
                 porcentaje = round(100 * sale_fee / float(precio), 2) if precio > 0 else 0.0
-                costo_fijo = 0  # Generalmente todo va al porcentaje, pero puedes adaptarlo
+                costo_fijo = 0  # ML Chile pone todo como porcentaje en la API normalmente.
                 return porcentaje, costo_fijo
     except Exception as e:
         print(f"[WARN] Error al consultar comisión exacta ML: {e}")
 
-    # Fallback: tu tabla manual
-    porcentaje = 13.0
+    # Si falla la API y hay una categoría específica, usa ese valor
     if cat_id in COMISIONES_CATEGORIAS_CHILE and tipo_pub in COMISIONES_CATEGORIAS_CHILE[cat_id]:
-        porcentaje = COMISIONES_CATEGORIAS_CHILE[cat_id][tipo_pub][0]
-    elif tipo_pub == "premium":
-        porcentaje = 16.0
-    else:
-        porcentaje = 13.0
-    costo_fijo = 700 if precio <= 9990 else 1000
-    return porcentaje, costo_fijo
+        porcentaje, costo_fijo = COMISIONES_CATEGORIAS_CHILE[cat_id][tipo_pub]
+        if porcentaje is None:
+            porcentaje = 0.0
+        if costo_fijo is None:
+            costo_fijo = 0
+        return porcentaje, costo_fijo
+
+    # Si no hay nada, devuelve 0
+    return 0.0, 0
 
 # ==== PUBLICAR PRODUCTO (FUTURO) ====
 def publicar_producto_ml(datos_producto):
