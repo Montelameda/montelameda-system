@@ -147,6 +147,43 @@ def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
 
     return porcentaje, costo_fijo
 
+# ==== COSTO DE ENVÍO AUTOMÁTICO (ML CHILE) ====
+def get_shipping_cost_mlc(
+    item_price,
+    dimensions,  # Ej: '30x20x10,800' (alto x ancho x largo, peso en gramos)
+    category_id,
+    listing_type_id,
+    condition="new"
+):
+    """
+    Consulta el costo estimado de envío para ML Chile, usando tu cuenta.
+    """
+    user_id = "2227856718"  # Tu User ID fijo
+    access_token = get_ml_token()
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = (
+        f"https://api.mercadolibre.com/users/{user_id}/shipping_options/free"
+        f"?dimensions={dimensions}&verbose=true"
+        f"&item_price={int(item_price)}"
+        f"&listing_type_id={listing_type_id}"
+        f"&category_id={category_id}"
+        f"&condition={condition}"
+        f"&mode=me2"
+    )
+    resp = requests.get(url, headers=headers, timeout=10)
+    if resp.ok:
+        data = resp.json()
+        try:
+            cheapest = min(data["options"], key=lambda o: o["list_cost"])
+            costo_envio = cheapest["list_cost"]
+            return costo_envio, cheapest
+        except Exception as e:
+            print(f"Error analizando opciones de envío: {e}")
+            return 0, {}
+    else:
+        print("Error en consulta de envío:", resp.text)
+        return 0, {}
+
 # ==== PUBLICAR PRODUCTO (FUTURO) ====
 def publicar_producto_ml(datos_producto):
     raise NotImplementedError("Publicación automática aún no implementada")
