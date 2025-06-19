@@ -261,26 +261,29 @@ with tabs[3]:
     st.text_input("Última entrada", placeholder="Fecha última entrada", key="ultima_entrada")
     st.text_input("Última salida", placeholder="Fecha última salida", key="ultima_salida")
 
-# TAB 5: MercadoLibre (mejorado, muestra TODOS los atributos)
+# TAB 5: MercadoLibre (muestra y guarda atributos oficiales, incluidos dimensiones y peso)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     ml_cat_id = st.session_state.get("ml_cat_id", "")
+    ml_attrs = {}
     if ml_cat_id:
-        req_attrs = ml_api.get_all_attrs(ml_cat_id)
-        ml_attr_vals = {}
+        req_attrs = ml_api.get_required_attrs(ml_cat_id)
         for attr in req_attrs:
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
-            if vtype in ("boolean"):
+            # Render dinámico según el tipo de dato
+            if vtype == "boolean":
                 opt = ["Sí", "No"]
-                ml_attr_vals[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
+                ml_attrs[aid] = st.selectbox(nombre, opt, key=f"ml_{aid}")
             elif vtype in ("list",):
                 opt = [v["name"] for v in attr.get("values", [])]
-                ml_attr_vals[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
+                ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], key=f"ml_{aid}")
+            elif vtype in ("number_unit", "number"):
+                ml_attrs[aid] = st.number_input(nombre, key=f"ml_{aid}")
             else:
-                ml_attr_vals[aid] = st.text_input(nombre, key=f"ml_{aid}")
-        st.session_state["ml_attrs"] = ml_attr_vals
+                ml_attrs[aid] = st.text_input(nombre, key=f"ml_{aid}")
+        st.session_state["ml_attrs"] = ml_attrs
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
 
