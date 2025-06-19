@@ -147,8 +147,8 @@ with tabs[2]:
     with col_ml:
         st.markdown("🛒 <b>Mercado Libre</b>", unsafe_allow_html=True)
         # Opción tipo publicación
-        if "ml_listing_type" not in st.session_state:
-            st.session_state.ml_listing_type = "clásico"
+        if "ml_listing_type" not in st.session_state or st.session_state.ml_listing_type not in ["Clásico", "Premium"]:
+            st.session_state.ml_listing_type = "Clásico"
         st.radio(
             "Tipo publicación ML", 
             options=["Clásico", "Premium"], 
