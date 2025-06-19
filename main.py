@@ -196,11 +196,10 @@ def render_tarjeta_producto(prod):
     with col_det:
         if st.button("👁️‍🗨️ Ver detalles", key=f"detalle_{doc_id}"):
             st.session_state["producto_actual"] = doc_id
-            st.switch_page("pages/ver_producto.py")
-
+            st.switch_page("ver_producto")
     with col_ml:
-    if st.button("🛒 Publicar ML", key=f"ml_{doc_id}"):
-        st.switch_page(f"2_Mercado_Libre?id={doc_id}")
+        if st.button("🛒 Publicar ML", key=f"ml_{doc_id}"):
+            st.switch_page(f"2_Mercado_Libre?id={doc_id}")
         
 # ─── Render cards ───────────────────────────────────────────────────────────
 if productos:
