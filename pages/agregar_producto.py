@@ -192,8 +192,8 @@ with tabs[2]:
         try:
             precio_fb = to_float(st.session_state.get("precio_facebook", 0))
             comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
-            precio_compra = to_float(st.session_state.get("precio_compra", 0))
-            ganancia_fb = precio_fb - precio_compra - comision_fb
+            precio_compra_fb = to_float(st.session_state.get("precio_compra", 0))
+            ganancia_fb = precio_fb - precio_compra_fb - comision_fb
             color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
             st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
         except:
@@ -203,6 +203,7 @@ with tabs[2]:
     # MercadoLibre
     with col_ml:
         st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
+        st.text_input("Precio de compra", placeholder="Costo del producto", key="precio_compra")
         st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
         st.text_input("Costo de envío MercadoLibre", value="0", key="envio_mercado_libre")
