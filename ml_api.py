@@ -112,17 +112,17 @@ def get_required_attrs(cat_id: str):
     data = get_all_attrs(cat_id)
     return [a for a in data if a.get("tags", {}).get("required")]
 
-# ==== COMISIÓN REAL DESDE API MERCADOLIBRE ====
+# ==== COMISIÓN REAL DESDE API MERCADOLIBRE (con costo fijo MLC) ====
 def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
     """
     Trae la comisión REAL desde la API autenticada de MercadoLibre para tu cuenta y categoría.
-    Si no la encuentra, devuelve 0.0 y costo fijo 0 (nunca inventa, nunca pone 13/16%).
+    Devuelve el porcentaje real y el costo fijo que aplica en ML Chile.
     """
     tipo_pub = tipo_pub.lower()
-    # Mapear tipo de publicación a listing_type_id de ML Chile/Argentina
     listing_type_id = "gold_special" if tipo_pub in ["clásico", "clasico"] else "gold_pro"
     access_token = get_ml_token()
     headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+    porcentaje = 0.0
     try:
         url = (
             f"https://api.mercadolibre.com/sites/MLC/listing_prices"
@@ -131,21 +131,22 @@ def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
         resp = requests.get(url, headers=headers, timeout=6)
         if resp.ok:
             data = resp.json()
-            # Buscar el tipo exacto en la lista de resultados
             for opt in data:
                 if opt.get("listing_type_id", "") == listing_type_id:
-                    sale_fee = float(opt.get("sale_fee_amount", 0))
                     sale_details = opt.get("sale_fee_details", {})
                     porcentaje = float(sale_details.get("percentage_fee", 0))
-                    return porcentaje, 0
-            print(f"[WARN] No se encontró comisión para tipo {listing_type_id} en respuesta ML.")
+                    break
     except Exception as e:
         print(f"[WARN] Error consultando comisión ML: {e}")
 
-    # Si la API no responde, nunca inventes: comisión 0
-    return 0.0, 0
+    # ---- COSTO FIJO CHILE MANUAL ----
+    if precio < 9990:
+        costo_fijo = 700
+    else:
+        costo_fijo = 1000
+
+    return porcentaje, costo_fijo
 
 # ==== PUBLICAR PRODUCTO (FUTURO) ====
 def publicar_producto_ml(datos_producto):
-    # Aquí va tu integración de publicación automática (cuando la necesites)
     raise NotImplementedError("Publicación automática aún no implementada")
