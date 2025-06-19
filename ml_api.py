@@ -123,17 +123,38 @@ COMISIONES_CATEGORIAS_CHILE = {
 
 # ==== FUNCIÓN PARA COMISIÓN SEGÚN CATEGORÍA, PRECIO Y TIPO PUBLICACIÓN ====
 def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
+    """
+    Devuelve el porcentaje y costo fijo de comisión para MercadoLibre Chile,
+    usando el endpoint oficial. Si falla, usa el diccionario de respaldo.
+    """
     tipo_pub = tipo_pub.lower()
-    porcentaje = 13.0  # Por defecto
-    # Fallback por categoría (si no tenemos nada, usamos 13/16 por defecto)
+    # Mapear tipo de publicación a listing_type_id de ML Chile
+    listing_type_id = "gold_pro" if tipo_pub in ["clásico", "clasico"] else "gold_special"
+    try:
+        url = (
+            f"https://api.mercadolibre.com/sites/MLC/listing_prices"
+            f"?price={int(precio)}&category_id={cat_id}&listing_type_id={listing_type_id}"
+        )
+        resp = requests.get(url, timeout=6)
+        if resp.ok:
+            data = resp.json()
+            if isinstance(data, list) and data:
+                cost = data[0]
+                sale_fee = float(cost.get("sale_fee_amount", 0))
+                porcentaje = round(100 * sale_fee / float(precio), 2) if precio > 0 else 0.0
+                costo_fijo = 0  # Generalmente todo va al porcentaje, pero puedes adaptarlo
+                return porcentaje, costo_fijo
+    except Exception as e:
+        print(f"[WARN] Error al consultar comisión exacta ML: {e}")
+
+    # Fallback: tu tabla manual
+    porcentaje = 13.0
     if cat_id in COMISIONES_CATEGORIAS_CHILE and tipo_pub in COMISIONES_CATEGORIAS_CHILE[cat_id]:
         porcentaje = COMISIONES_CATEGORIAS_CHILE[cat_id][tipo_pub][0]
     elif tipo_pub == "premium":
         porcentaje = 16.0
     else:
         porcentaje = 13.0
-    # Si quieres pedir la comisión exacta a la API, aquí va el endpoint (solo para premium algunas veces está disponible)
-    # https://api.mercadolibre.com/sites/MLC/listing_prices?price=19990&category_id=MLC1166&listing_type_id=gold_special
     costo_fijo = 700 if precio <= 9990 else 1000
     return porcentaje, costo_fijo
 
@@ -141,4 +162,3 @@ def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
 def publicar_producto_ml(datos_producto):
     # Aquí va tu integración de publicación automática (cuando la necesites)
     raise NotImplementedError("Publicación automática aún no implementada")
-
