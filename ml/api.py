@@ -199,3 +199,26 @@ def get_shipping_cost_mlc(
 # ==== PUBLICAR PRODUCTO (FUTURO) ====
 def publicar_producto_ml(datos_producto):
     raise NotImplementedError("Publicación automática aún no implementada")
+    # ==== PUBLICAR ITEM EN ML ====
+def publish_item(payload: dict) -> str:
+    """
+    Publica un producto en Mercado Libre usando tu access_token y retorna el ID del ítem creado.
+    """
+    access_token = get_ml_token()
+    url = f"https://api.mercadolibre.com/items?access_token={access_token}"
+    resp = requests.post(url, json=payload, timeout=15)
+    resp.raise_for_status()
+    return resp.json()["id"]
+
+# ==== VALIDAR PAYLOAD ANTES DE PUBLICAR ====
+def validate_item(payload: dict) -> dict:
+    """
+    Valida un producto contra la API de Mercado Libre, sin publicarlo todavía.
+    Retorna los errores que Mercado Libre detecte (o {} si está OK).
+    """
+    access_token = get_ml_token()
+    url = f"https://api.mercadolibre.com/items/validate?access_token={access_token}"
+    resp = requests.post(url, json=payload, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
