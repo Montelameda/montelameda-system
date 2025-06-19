@@ -132,6 +132,22 @@ with tabs[2]:
         horizontal=True,
         label_visibility="visible"
     )
+# Categoría ML detectada (debajo del precio, arriba de comisión)
+        ml_cat_id, ml_cat_name = "", ""
+        if nombre_producto:
+            try:
+                cats = ml_api.suggest_categories(nombre_producto)
+                if cats:
+                    ml_cat_id, ml_cat_name = cats[0]
+            except Exception:
+                pass
+        st.session_state["ml_cat_id"] = ml_cat_id
+        if ml_cat_id:
+            st.markdown(
+                f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
+                f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
+                unsafe_allow_html=True
+            )
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
     col_fb, col_ml, col_ml30 = st.columns(3)
 
@@ -156,23 +172,6 @@ with tabs[2]:
     with col_ml:
         st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
         st.text_input("Precio para ML", placeholder="Precio para ML", key="precio_mercado_libre")
-
-        # Categoría ML detectada (debajo del precio, arriba de comisión)
-        ml_cat_id, ml_cat_name = "", ""
-        if nombre_producto:
-            try:
-                cats = ml_api.suggest_categories(nombre_producto)
-                if cats:
-                    ml_cat_id, ml_cat_name = cats[0]
-            except Exception:
-                pass
-        st.session_state["ml_cat_id"] = ml_cat_id
-        if ml_cat_id:
-            st.markdown(
-                f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
-                f'<b style="color:#1258ad">{ml_cat_name}</b> <span style="font-size:0.9rem;color:#999;">({ml_cat_id})</span>',
-                unsafe_allow_html=True
-            )
 
                 # --- Comisión Mercado Libre ---
         precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
