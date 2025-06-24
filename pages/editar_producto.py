@@ -1,12 +1,27 @@
 import streamlit as st
 import firebase_config
 from login_app import login, esta_autenticado, obtener_rol
-import datetime
 import math
-import time
 import ml_api  # integración MercadoLibre
 
-# --- Autenticación ---
+# =================== UTILIDAD ======================
+def to_float(val):
+    try:
+        return float(str(val).replace(",", ".")) if val not in [None, ""] else 0.0
+    except Exception:
+        return 0.0
+
+def limpiar_valor(valor):
+    if valor is None: return None
+    if isinstance(valor, float) and math.isnan(valor): return None
+    if isinstance(valor, list) and not valor: return None
+    v = str(valor).strip().lower()
+    return None if v in ["", "nan", "none", "null", "sin info", "n/a"] else str(valor).strip()
+
+def filtrar_campos(diccionario):
+    return {k: v for k, v in diccionario.items() if k and v not in [None, ""]}
+
+# =================== AUTH & DB =====================
 if not esta_autenticado():
     login()
     st.stop()
@@ -19,46 +34,20 @@ if rol_usuario != "admin":
 st.set_page_config(page_title="Editar Producto", layout="wide")
 db = firebase_config.db
 
-# --- Obtener el ID del producto desde el session_state ---
 producto_id = st.session_state.get("producto_actual")
 if not producto_id:
     st.error("❌ No se proporcionó un ID de producto válido.")
     st.stop()
 
-# --- Obtener datos del producto existente ---
-doc_ref = db.collection("productos").document(producto_id)
-doc = doc_ref.get()
+# =================== CARGAR PRODUCTO ===================
+doc = db.collection("productos").document(producto_id).get()
 if not doc.exists:
     st.error("⚠️ El producto no fue encontrado en la base de datos.")
     st.stop()
 producto = doc.to_dict()
 
-# === FUNCIONES UTILIDAD ===
-def to_float(val):
-    if val is None or str(val).strip() == "":
-        return 0.0
-    try:
-        return float(str(val).replace(",", "."))
-    except Exception:
-        return 0.0
-
-def limpiar_valor(valor):
-    if valor is None:
-        return None
-    if isinstance(valor, float) and math.isnan(valor):
-        return None
-    if isinstance(valor, list) and len(valor) == 0:
-        return None
-    v = str(valor).strip().lower()
-    if v in ["", "nan", "none", "null", "sin info", "n/a"]:
-        return None
-    return str(valor).strip()
-
-def filtrar_campos(diccionario):
-    return {k: v for k, v in diccionario.items() if k and v not in [None, ""]}
-
-# --- Precargar datos SOLO la primera vez por producto ---
-campos_precargar = [
+# Precargar al session_state SOLO 1 VEZ
+CAMPOS_FORM = [
     "codigo_barra", "codigo_minimo", "proveedor", "nombre_producto", "categoria", "marca",
     "descripcion", "estado", "imagen_principal_url", "imagenes_secundarias_url", "etiquetas",
     "foto_proveedor", "precio_compra", "precio_facebook", "comision_vendedor_facebook",
@@ -68,19 +57,17 @@ campos_precargar = [
     "link_publicacion_4", "cantidad_vendida", "ultima_entrada", "ultima_salida", "ml_cat_id",
     "ml_listing_type", "ml_attrs"
 ]
-if "form_precargado" not in st.session_state or st.session_state.get("producto_cargado_previo") != producto_id:
-    for campo in campos_precargar:
+if st.session_state.get("producto_cargado_previo") != producto_id:
+    for campo in CAMPOS_FORM:
         st.session_state[campo] = producto.get(campo, "")
-    st.session_state["form_precargado"] = True
     st.session_state["producto_cargado_previo"] = producto_id
 
-# --- CSS global ---
+# =================== CSS & HEADERS =====================
 st.markdown("""
 <style>
 body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 .container { max-width: 1200px; margin: auto; }
-.card { background-color: #fff; padding: 20px; border-radius: 10px;
-        box-shadow: 0px 4px 6px rgba(0,0,0,0.09); margin-bottom: 20px; }
+.card { background-color: #fff; padding: 20px; border-radius: 10px; box-shadow: 0px 4px 6px rgba(0,0,0,0.09); margin-bottom: 20px; }
 .thumbnail { width: 80px; height: 80px; object-fit: cover; border-radius: 5px; margin-right: 10px; display: inline-block; }
 .valor-positivo { color: #19c319; font-weight: bold; font-size: 1.3em; }
 .valor-negativo { color: #f12b2b; font-weight: bold; font-size: 1.3em; }
@@ -91,42 +78,49 @@ body { font-family: 'Roboto', sans-serif; background-color: #f4f4f9; }
 .radio-mlpub {margin-bottom:12px;}
 </style>
 """, unsafe_allow_html=True)
-
 st.markdown("<div class='container'>", unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center;'>✏️ Editar producto</h1>", unsafe_allow_html=True)
 st.markdown(f"<h3 style='text-align: center; color: #205ec5;'>🆔 ID producto: {producto_id}</h3>", unsafe_allow_html=True)
 
-# --- Progreso del formulario ---
-obligatorios_ids = [
+# =================== BARRA PROGRESO ===================
+OBLIGATORIOS = [
     "codigo_barra", "codigo_minimo", "proveedor", "nombre_producto", "categoria", "marca",
     "descripcion", "estado", "precio_facebook", "comision_vendedor_facebook", "precio_compra"
 ]
-campos_llenos = sum(1 for k in obligatorios_ids if st.session_state.get(k))
-progreso = int((campos_llenos / len(obligatorios_ids)) * 100)
+campos_llenos = sum(1 for k in OBLIGATORIOS if st.session_state.get(k))
+progreso = int((campos_llenos / len(OBLIGATORIOS)) * 100)
 st.progress(progreso, text=f"Formulario completado: {progreso}%")
 
-# --- TABS ---
+# =================== FUNCIONES DE UI ===================
+def select_categorias():
+    docs_cat = db.collection("categorias").stream()
+    return sorted([str(doc.to_dict()["nombre"]) for doc in docs_cat if "nombre" in doc.to_dict()])
+
+def select_proveedores():
+    docs_prov = db.collection("proveedores").stream()
+    return sorted([str(doc.to_dict()["nombre"]) for doc in docs_prov if "nombre" in doc.to_dict()])
+
+def show_thumbnails(urls):
+    st.markdown(" ".join([f'<img src="{u}" class="thumbnail">' for u in urls]), unsafe_allow_html=True)
+
+# =================== TABS ===================
 tabs = st.tabs(["🧾 Identificación", "🖼️ Visuales y Descripción", "💰 Precios", "📦 Stock y Opciones", "🛒 MercadoLibre"])
 
-# TAB 1: Identificación
+# ---------- TAB 1: Identificación ----------
 with tabs[0]:
     col1, col2, col3 = st.columns(3)
     with col1:
         st.text_input("Código de barra *", key="codigo_barra")
         st.text_input("Nombre del producto *", key="nombre_producto", max_chars=60)
-        docs_cat = db.collection("categorias").stream()
-        categorias = sorted([str(doc.to_dict()["nombre"]) for doc in docs_cat if "nombre" in doc.to_dict()])
-        st.selectbox("Categoría *", options=categorias, key="categoria")
+        st.selectbox("Categoría *", options=select_categorias(), key="categoria")
     with col2:
         st.text_input("Código mínimo *", key="codigo_minimo")
         st.text_input("Marca *", key="marca")
-        docs_prov = db.collection("proveedores").stream()
-        proveedores = sorted([str(doc.to_dict()["nombre"]) for doc in docs_prov if "nombre" in doc.to_dict()])
-        opciones_proveedores = proveedores + ["Agregar nuevo"]
+        opciones_proveedores = select_proveedores() + ["Agregar nuevo"]
         proveedor_seleccionado = st.selectbox("Proveedor *", options=opciones_proveedores, key="proveedor")
         if proveedor_seleccionado == "Agregar nuevo":
             nuevo_prov = st.text_input("Nombre del nuevo proveedor", key="nuevo_prov")
-            if nuevo_prov and nuevo_prov not in proveedores:
+            if nuevo_prov and nuevo_prov not in opciones_proveedores:
                 if st.button("Guardar nuevo proveedor"):
                     db.collection("proveedores").add({"nombre": nuevo_prov})
                     st.success(f"Proveedor '{nuevo_prov}' agregado correctamente.")
@@ -137,7 +131,7 @@ with tabs[0]:
     with col3:
         st.selectbox("Estado *", options=["Nuevo", "Usado"], key="estado")
 
-# TAB 2: Visuales y Descripción
+# ---------- TAB 2: Visuales y Descripción ----------
 with tabs[1]:
     st.text_area("Descripción *", key="descripcion")
     st.text_input("Imagen principal (URL)", key="imagen_principal_url")
@@ -145,37 +139,26 @@ with tabs[1]:
         st.image(st.session_state.get("imagen_principal_url"), width=200)
     st.text_input("Imágenes secundarias (URLs separadas por coma)", key="imagenes_secundarias_url")
     if st.session_state.get("imagenes_secundarias_url"):
-        urls = [url.strip() for url in st.session_state.get("imagenes_secundarias_url").split(",") if url.strip() != ""]
-        st.markdown(" ".join([f'<img src="{u}" class="thumbnail">' for u in urls]), unsafe_allow_html=True)
+        urls = [u.strip() for u in st.session_state["imagenes_secundarias_url"].split(",") if u.strip()]
+        show_thumbnails(urls)
     st.text_input("Etiquetas", key="etiquetas")
     st.text_input("Foto de proveedor", key="foto_proveedor")
 
-# TAB 3: PRECIOS
+# ---------- TAB 3: Precios ----------
 with tabs[2]:
     st.markdown("### Mercado Libre - Tipo de publicación", unsafe_allow_html=True)
-    st.radio(
-        "Tipo publicación ML",
-        options=["Clásico", "Premium"],
-        key="ml_listing_type",
-        horizontal=True,
-        label_visibility="visible"
-    )
+    st.radio("Tipo publicación ML", options=["Clásico", "Premium"], key="ml_listing_type", horizontal=True)
 
-    # --- Detección de categoría ML y actualización automática como en agregar ---
+    # --- Categoría MercadoLibre automática ---
     nombre_producto = st.session_state.get("nombre_producto", "")
     ml_cat_id, ml_cat_name = st.session_state.get("ml_cat_id", ""), st.session_state.get("ml_cat_name", "")
-    # Detectar la categoría de MercadoLibre por nombre de producto (hook dinámico)
     if nombre_producto:
         try:
             cats = ml_api.suggest_categories(nombre_producto)
-            if cats:
-                ml_cat_id, ml_cat_name = cats[0]
-        except Exception:
-            pass
-    st.session_state["ml_cat_id"] = ml_cat_id
-    st.session_state["ml_cat_name"] = ml_cat_name
+            if cats: ml_cat_id, ml_cat_name = cats[0]
+        except Exception: pass
+    st.session_state["ml_cat_id"], st.session_state["ml_cat_name"] = ml_cat_id, ml_cat_name
 
-    # --- Mostrar categoría detectada ---
     if ml_cat_id:
         st.markdown(
             f'<div class="small-label" style="color:#205ec5;font-weight:700;margin-top:10px;">Categoría ML detectada:</div>'
@@ -183,7 +166,7 @@ with tabs[2]:
             unsafe_allow_html=True
         )
 
-    # --- Calcular comisión ML igualito que agregar ---
+    # --- Calculo comisión ML
     precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
     tipo_pub = st.session_state.ml_listing_type.lower()
     porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
@@ -198,35 +181,26 @@ with tabs[2]:
     st.markdown("<h2 style='margin-top:1em;margin-bottom:0.2em;'>Detalles de Precios</h2>", unsafe_allow_html=True)
     col_fb, col_ml, col_ml30 = st.columns(3)
 
-    # --- Facebook (izquierda) ---
+    # --- Facebook
     with col_fb:
         st.markdown("💰 <b>Facebook</b>", unsafe_allow_html=True)
         st.text_input("Precio para Facebook", key="precio_facebook")
         st.text_input("Comisión", key="comision_vendedor_facebook")
         st.text_input("Precio al por mayor de 3", key="precio_mayor_3")
-        try:
-            precio_fb = to_float(st.session_state.get("precio_facebook", 0))
-            comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
-            precio_compra = to_float(st.session_state.get("precio_compra", 0))
-            ganancia_fb = precio_fb - precio_compra - comision_fb
-            color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
-            st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
-        except:
-            st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
-            ganancia_fb = None
+        precio_fb = to_float(st.session_state.get("precio_facebook", 0))
+        comision_fb = to_float(st.session_state.get("comision_vendedor_facebook", 0))
+        precio_compra = to_float(st.session_state.get("precio_compra", 0))
+        ganancia_fb = precio_fb - precio_compra - comision_fb
+        color_fb = "valor-positivo" if ganancia_fb > 0 else "valor-negativo"
+        st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_fb}'>✅ {ganancia_fb:.0f} CLP</span>", unsafe_allow_html=True)
 
-    # --- MercadoLibre (centro) ---
+    # --- MercadoLibre
     with col_ml:
         st.markdown("<b>Mercado Libre</b>", unsafe_allow_html=True)
         st.text_input("Precio para ML", key="precio_mercado_libre")
         st.text_input("Comisión MercadoLibre", value=f"{comision_ml:.0f}", key="comision_mercado_libre", disabled=True)
-
-        # --- Cálculo de envío ---
         attrs = st.session_state.get("ml_attrs", {})
-        alto = attrs.get("HEIGHT", 0)
-        ancho = attrs.get("WIDTH", 0)
-        largo = attrs.get("LENGTH", 0)
-        peso = attrs.get("WEIGHT", 0)
+        alto, ancho, largo, peso = attrs.get("HEIGHT", 0), attrs.get("WIDTH", 0), attrs.get("LENGTH", 0), attrs.get("WEIGHT", 0)
         if not (alto and ancho and largo and peso):
             st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
             costo_envio = 0
@@ -240,56 +214,37 @@ with tabs[2]:
                 condition="new"
             )
         st.text_input("Costo de envío MercadoLibre", value=f"{costo_envio:.0f}", key="envio_mercado_libre", disabled=True)
+        ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - costo_envio
+        color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
+        st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml}'>✅ {ganancia_ml_estimada:.0f} CLP</span>", unsafe_allow_html=True)
+        ganancia_bruta = precio_ml - comision_ml - costo_envio
+        iva_19 = ganancia_bruta * 0.19
+        ganancia_ml_neta = ganancia_bruta - iva_19 - precio_compra
+        st.markdown(f"<span class='valor-iva'>🟩 Ganancia de ML descontando IVA 19%: {ganancia_ml_neta:.0f} CLP</span>", unsafe_allow_html=True)
 
-        try:
-            precio_compra = to_float(st.session_state.get("precio_compra", 0))
-            ganancia_ml_estimada = precio_ml - precio_compra - comision_ml - costo_envio
-            color_ml = "valor-positivo" if ganancia_ml_estimada > 0 else "valor-negativo"
-            st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml}'>✅ {ganancia_ml_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta = precio_ml - comision_ml - costo_envio
-            iva_19 = ganancia_bruta * 0.19
-            ganancia_ml_neta = ganancia_bruta - iva_19 - precio_compra
-            st.markdown(f"<span class='valor-iva'>🟩 Ganancia de ML descontando IVA 19%: {ganancia_ml_neta:.0f} CLP</span>", unsafe_allow_html=True)
-        except:
-            st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
-            ganancia_ml_estimada = None
-            ganancia_ml_neta = None
-
-    # --- MercadoLibre con 30% desc. (derecha) ---
+    # --- MercadoLibre con 30% desc.
     with col_ml30:
         st.markdown("💖 <b>ML con 30% desc.</b>", unsafe_allow_html=True)
         precio_ml_30 = precio_ml * 0.7
-        porcentaje_30, costo_fijo_30 = porcentaje, costo_fijo
-        comision_ml_30 = round(precio_ml_30 * porcentaje_30 / 100 + costo_fijo_30)
+        comision_ml_30 = round(precio_ml_30 * porcentaje / 100 + costo_fijo)
         st.text_input("Precio", value=f"{precio_ml_30:.0f}", key="precio_mercado_libre_30_desc", disabled=True)
         st.text_input("Comisión", value=f"{comision_ml_30:.0f}", key="comision_mercado_libre_30_desc", disabled=True)
         st.text_input("Envío", value="0", key="envio_mercado_libre_30_desc", disabled=True)
-        try:
-            envio_ml_30 = 0
-            precio_compra = to_float(st.session_state.get("precio_compra", 0))
-            ganancia_ml_desc_estimada = precio_ml_30 - precio_compra - comision_ml_30 - envio_ml_30
-            color_ml_desc = "valor-positivo" if ganancia_ml_desc_estimada > 0 else "valor-negativo"
-            st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml_desc}'>✅ {ganancia_ml_desc_estimada:.0f} CLP</span>", unsafe_allow_html=True)
-            ganancia_bruta_desc = precio_ml_30 - comision_ml_30 - envio_ml_30
-            iva_19_desc = ganancia_bruta_desc * 0.19
-            ganancia_ml_desc_neta = ganancia_bruta_desc - iva_19_desc - precio_compra
-            st.markdown(f"<span class='valor-iva'>🟩 Ganancia ML -30% con IVA 19%: {ganancia_ml_desc_neta:.0f} CLP</span>", unsafe_allow_html=True)
-        except:
-            st.markdown("Ganancia estimada:<br><span class='valor-negativo'>-</span>", unsafe_allow_html=True)
-            ganancia_ml_desc_estimada = None
-            ganancia_ml_desc_neta = None
+        ganancia_ml_desc_estimada = precio_ml_30 - precio_compra - comision_ml_30
+        color_ml_desc = "valor-positivo" if ganancia_ml_desc_estimada > 0 else "valor-negativo"
+        st.markdown(f"Ganancia estimada:<br><span class='resaltado {color_ml_desc}'>✅ {ganancia_ml_desc_estimada:.0f} CLP</span>", unsafe_allow_html=True)
+        ganancia_bruta_desc = precio_ml_30 - comision_ml_30
+        iva_19_desc = ganancia_bruta_desc * 0.19
+        ganancia_ml_desc_neta = ganancia_bruta_desc - iva_19_desc - precio_compra
+        st.markdown(f"<span class='valor-iva'>🟩 Ganancia ML -30% con IVA 19%: {ganancia_ml_desc_neta:.0f} CLP</span>", unsafe_allow_html=True)
 
-# --- TAB 4: Stock y otros
+# ---------- TAB 4: Stock y otros ----------
 with tabs[3]:
-    st.text_input("Stock", key="stock")
-    st.text_input("Mostrar en catálogo", key="mostrar_catalogo")
-    st.text_input("ID Publicación Mercado Libre", key="id_publicacion_mercado_libre")
-    st.text_input("Link publicación 1", key="link_publicacion_1")
-    st.text_input("Link publicación 2", key="link_publicacion_2")
-    st.text_input("Link publicación 3", key="link_publicacion_3")
-    st.text_input("Link publicación 4", key="link_publicacion_4")
-    st.text_input("Cantidad vendida", key="cantidad_vendida")
-    st.text_input("Última entrada", key="ultima_entrada")
-    st.text_input("Última salida", key="ultima_salida")
+    for campo in ["stock", "mostrar_catalogo", "id_publicacion_mercado_libre",
+                  "link_publicacion_1", "link_publicacion_2", "link_publicacion_3", "link_publicacion_4",
+                  "cantidad_vendida", "ultima_entrada", "ultima_salida"]:
+        st.text_input(campo.replace("_", " ").capitalize(), key=campo)
 
-# TAB 5: MercadoLibre (atributos oficiales ML, con keys únicos
+# --- (Te faltó el TAB 5 MercadoLibre atributos, agrégalo aquí si quieres) ---
+
+# FIN DEL CÓDIGO REFACTORIZADO
