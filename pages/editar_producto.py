@@ -161,9 +161,10 @@ with tabs[2]:
         label_visibility="visible"
     )
 
-    # --- Detección de categoría ML ---
+    # --- Detección de categoría ML y actualización automática como en agregar ---
     nombre_producto = st.session_state.get("nombre_producto", "")
     ml_cat_id, ml_cat_name = st.session_state.get("ml_cat_id", ""), st.session_state.get("ml_cat_name", "")
+    # Detectar la categoría de MercadoLibre por nombre de producto (hook dinámico)
     if nombre_producto:
         try:
             cats = ml_api.suggest_categories(nombre_producto)
@@ -182,14 +183,14 @@ with tabs[2]:
             unsafe_allow_html=True
         )
 
-    # --- Calcular comisión ML ---
+    # --- Calcular comisión ML igualito que agregar ---
     precio_ml = to_float(st.session_state.get("precio_mercado_libre", 0))
     tipo_pub = st.session_state.ml_listing_type.lower()
     porcentaje, costo_fijo = ml_api.get_comision_categoria_ml(ml_cat_id, precio_ml, tipo_pub)
     comision_ml = round(precio_ml * porcentaje / 100 + costo_fijo)
     st.markdown(
         f"""<div style="background:#fffbe7;padding:7px 12px;border-radius:8px;margin-bottom:10px;margin-top:4px;font-size:1em;">
-        Comisión MercadoLibre: <b>{comision_ml:,} CLP</b> ({porcentaje:.2f}% del precio, costo fijo: {costo_fijo} CLP)
+        Comisión MercadoLibre: <b>{comision_ml:,} CLP</b> ({porcentaje:.2%} del precio, costo fijo: {costo_fijo} CLP)
         </div>""",
         unsafe_allow_html=True
     )
