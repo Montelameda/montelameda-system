@@ -151,14 +151,19 @@ with tabs[1]:
 # TAB 3: PRECIOS (idéntico lógica agregar)
 with tabs[2]:
     st.markdown("### Mercado Libre - Tipo de publicación", unsafe_allow_html=True)
+
+    # --- ANTI-BOMBA para ml_listing_type ---
+    opciones_ml = ["Clásico", "Premium"]
+    if st.session_state.get("ml_listing_type") not in opciones_ml:
+        st.session_state["ml_listing_type"] = "Clásico"
+
     st.radio(
         "Tipo publicación ML",
-        options=["Clásico", "Premium"],
+        options=opciones_ml,
         key="ml_listing_type",
         horizontal=True,
         label_visibility="visible"
     )
-
     # --- Detección de categoría ML ---
     nombre_producto = st.session_state.get("nombre_producto", "")
     ml_cat_id, ml_cat_name = "", ""
