@@ -425,13 +425,23 @@ if st.button("💾 Actualizar Producto"):
     except Exception as e:
         st.error(f"❌ Error actualizando producto: {e}")
 
-if st.button("🗑️ Eliminar Producto"):
-    if st.confirm("¿Estás seguro de que quieres eliminar este producto?"):
-        try:
-            doc_ref.delete()
-            st.success("Producto eliminado correctamente.")
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Error eliminando producto: {e}")
+if st.button("🗑️ Eliminar Producto", type="primary"):
+    st.session_state["confirm_delete"] = True
+
+if st.session_state.get("confirm_delete"):
+    st.warning("¿Estás seguro de que quieres eliminar este producto? Esta acción no se puede deshacer.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Sí, eliminar DEFINITIVAMENTE"):
+            try:
+                doc_ref.delete()
+                st.success("Producto eliminado correctamente.")
+                st.session_state["confirm_delete"] = False
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Error eliminando producto: {e}")
+    with col2:
+        if st.button("❌ Cancelar"):
+            st.session_state["confirm_delete"] = False
 
 st.markdown("</div>", unsafe_allow_html=True)
