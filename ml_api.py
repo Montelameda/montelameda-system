@@ -36,7 +36,6 @@ def get_ml_token():
 
 # ==== SUGERIR CATEGORÍAS POR NOMBRE (AUTODETECCIÓN) ====
 def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
-    """Sugiere categorías a partir de un nombre de producto (usada por el frontend)"""
     q = urllib.parse.quote(title.strip())
     url = f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search?limit={limit}&q={q}"
     try:
@@ -57,7 +56,6 @@ def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
 
 # ==== OBTENER TODOS LOS ATRIBUTOS DE UNA CATEGORÍA ====
 def get_all_attrs(cat_id: str):
-    """Devuelve todos los atributos de una categoría ML (usada por el frontend)"""
     url = f"https://api.mercadolibre.com/categories/{cat_id}/attributes"
     try:
         res = requests.get(url)
