@@ -436,29 +436,3 @@ if st.session_state.get("confirm_delete"):
 
 st.markdown("</div>", unsafe_allow_html=True)
 if st.button("🟡 Publicar/Actualizar en Mercado Libre"):
-    try:
-        nuevos_limpios = filtrar_campos(nuevos)
-        if not nuevos_limpios:
-            st.error("❌ No hay datos para publicar en ML.")
-        else:
-            id_ml = nuevos_limpios.get("id_publicacion_mercado_libre")
-            if id_ml:  # Si ya tiene publicación en ML, EDITA
-                response_ml = ml_api.editar_producto_ml(id_ml, nuevos_limpios)
-                st.success(f"Actualizado en Mercado Libre. ID: {id_ml}")
-                # Opcional: actualizar enlace por si lo cambian
-                if response_ml.get("permalink"):
-                    doc_ref.update({
-                        "link_publicacion_1": response_ml.get("permalink"),
-                    })
-                    st.markdown(f"[Ver en Mercado Libre]({response_ml.get('permalink')})")
-            else:  # Si NO tiene publicación, CREA nueva
-                response_ml = ml_api.publicar_producto_ml(nuevos_limpios)
-                # Guarda el ID y el link en la base de datos
-                doc_ref.update({
-                    "id_publicacion_mercado_libre": response_ml.get("id"),
-                    "link_publicacion_1": response_ml.get("permalink"),
-                })
-                st.success(f"Publicado en Mercado Libre. ID: {response_ml.get('id')}")
-                st.markdown(f"[Ver en Mercado Libre]({response_ml.get('permalink')})")
-    except Exception as e:
-        st.error(f"❌ Error publicando/editando en Mercado Libre: {e}")
