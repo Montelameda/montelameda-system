@@ -281,49 +281,52 @@ with tabs[2]:
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
 
-# --- DETECCIÓN AUTOMÁTICA DE CATEGORÍA ML ---
-import ml_api  # si no está ya arriba
+# --- AUTODETECCIÓN DE CATEGORÍA ML ---
+import ml_api  # Si no está ya importado arriba
+
 nombre_producto = st.session_state.get("nombre_producto", "")
-ml_cat_id = st.session_state.get("ml_cat_id") or producto.get("ml_cat_id", "")
+# Si ya tienes 'producto' definido arriba, lo usa; si no, pon {}
+ml_cat_id = st.session_state.get("ml_cat_id") or (producto.get("ml_cat_id", "") if 'producto' in locals() else "")
 
 if nombre_producto and not ml_cat_id:
     try:
-        ml_cat_id = ml_api.predecir_categoria(nombre_producto)
-        st.session_state["ml_cat_id"] = ml_cat_id
+        # Esto usa suggest_categories del ml_api, que debería devolver una lista (id, name)
+        cats = ml_api.suggest_categories(nombre_producto)
+        if cats and len(cats) > 0:
+            ml_cat_id = cats[0][0]
+            st.session_state["ml_cat_id"] = ml_cat_id
     except Exception as e:
         st.warning(f"No se pudo detectar categoría ML automáticamente: {e}")
 
-# --- TAB 4: Stock y otros
+# --- TAB 4: MercadoLibre (atributos oficiales ML, igual a agregar) ---
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
-    ml_cat_id = st.session_state.get("ml_cat_id") or producto.get("ml_cat_id", "")
+    ml_cat_id = st.session_state.get("ml_cat_id") or (producto.get("ml_cat_id", "") if 'producto' in locals() else "")
     ml_attrs = {}
     campos_faltantes = []
 
     mostrar_avanzados = st.checkbox("Mostrar campos avanzados (opcional)", value=False)
 
     if ml_cat_id:
+        # ¡IMPORTANTE! Asegúrate de tener la función 'get_all_attrs' en tu ml_api.py
         attrs = ml_api.get_all_attrs(ml_cat_id)
 
         def es_requerido(a):
             tags = a.get("tags", {})
             return tags.get("required") or tags.get("conditional_required") or tags.get("new_required")
 
-        # Filtros requeridos y no requeridos
         requeridos = [a for a in attrs if es_requerido(a)]
         no_requeridos = [a for a in attrs if not es_requerido(a)]
 
-        # Opcional: lista negra de campos que jamás usarás (ocultos hasta en avanzados)
         blacklist = [
             "Características químicas del producto", "Medicamentos", "Plataformas excluidas", "Características de las baterías",
             "Motivos de visibilidad limitada en Marketplace", "Tags descriptivos", "Información adicional requerida", "Campos de mejora de búsqueda",
             "Fuente del producto", "Alimentos y bebidas", "IVA", "Impuesto interno"
         ]
-
         def is_blacklisted(a):
             return any(bad in a.get("name", "") for bad in blacklist)
 
-        # ---- Mostrar requeridos primero y resaltados ----
+        # Mostrar requeridos primero, resaltados
         for attr in requeridos:
             if is_blacklisted(attr):
                 continue
@@ -331,7 +334,7 @@ with tabs[4]:
             nombre = attr["name"]
             vtype = attr["value_type"]
             prev_val = st.session_state.get("ml_attrs", {}).get(aid, "")
-            # Resaltado amarillo
+            # Resaltado amarillo para requeridos
             st.markdown(f"<div style='background: #FFFACD; padding:4px; border-radius:5px;'><b>{nombre} (Obligatorio)</b></div>", unsafe_allow_html=True)
             # Input según tipo
             if vtype in ("number", "number_unit"):
@@ -344,11 +347,11 @@ with tabs[4]:
             else:
                 val = st.text_input(nombre, value=prev_val, key=f"ml_{aid}_edit")
             ml_attrs[aid] = val
-            # Validador: si vacío, agrégalo a la lista de faltantes
+            # Si vacío, agrégalo a faltantes
             if not val or (isinstance(val, str) and not val.strip()):
                 campos_faltantes.append(nombre)
 
-        # --- Mostrar avanzados solo si el usuario lo pide ---
+        # Mostrar avanzados solo si el usuario lo pide
         if mostrar_avanzados:
             st.markdown("---")
             st.markdown("<b>Campos avanzados (opcional):</b>", unsafe_allow_html=True)
@@ -372,7 +375,7 @@ with tabs[4]:
 
         st.session_state["ml_attrs"] = ml_attrs
 
-        # AVISO: Si faltan obligatorios, muestra advertencia
+        # Aviso si faltan obligatorios
         if campos_faltantes:
             st.warning(f"Debes completar los siguientes campos obligatorios antes de publicar: {', '.join(campos_faltantes)}")
 
