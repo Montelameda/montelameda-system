@@ -2,9 +2,9 @@ import json
 import pathlib
 import datetime
 import urllib.parse
+import requests   # ✅ IMPORTADO
 
 # ==== CONFIGURA TUS CREDENCIALES ====
-# --- CONFIG (coloca tus credenciales si necesitas token, pero para predecir categoría NO pide token)
 ML_CLIENT_ID = "264097672348150"
 ML_CLIENT_SECRET = "oCouItXpao4bYX1GZ0ZTAC16brpqLgkP"
 ML_REFRESH_TOKEN = "TG-68530d69b78f1e0001a8d29e-2227856718"
@@ -13,7 +13,28 @@ ML_REFRESH_TOKEN = "TG-68530d69b78f1e0001a8d29e-2227856718"
 TOKEN_CACHE = pathlib.Path(".ml_token.json")
 
 def get_ml_token():
-@@ -34,153 +32,23 @@ def get_ml_token():
+    if TOKEN_CACHE.exists():
+        token_data = json.loads(TOKEN_CACHE.read_text())
+        expires_at = datetime.datetime.fromisoformat(token_data["expires_at"])
+        if expires_at > datetime.datetime.now():
+            return token_data["access_token"]
+
+    url = "https://api.mercadolibre.com/oauth/token"
+    payload = {
+        "grant_type": "refresh_token",
+        "client_id": ML_CLIENT_ID,
+        "client_secret": ML_CLIENT_SECRET,
+        "refresh_token": ML_REFRESH_TOKEN
+    }
+    resp = requests.post(url, json=payload)
+    if resp.ok:
+        data = resp.json()
+        expires_at = datetime.datetime.now() + datetime.timedelta(seconds=data["expires_in"])
+        TOKEN_CACHE.write_text(json.dumps({
+            "access_token": data["access_token"],
+            "expires_at": expires_at.isoformat()
+        }))
+        return data["access_token"]
     else:
         raise RuntimeError(f"Error renovando token ML: {resp.text}")
 
@@ -81,6 +102,8 @@ def publicar_producto_ml(datos_producto):
     )
     if not resp.ok:
         raise Exception(f"Error publicando en ML: {resp.text}")
+    return resp.json()
+
 # --- DETECTAR CATEGORÍA COMO EN LA DOC OFICIAL ---
 def predecir_categoria(nombre_producto, site_id="MLC"):
     params = {"q": nombre_producto, "limit": 1}
@@ -113,7 +136,6 @@ def editar_producto_ml(id_ml, datos_producto):
         "title": datos_producto["nombre_producto"],
         "price": float(datos_producto["precio_mercado_libre"]),
         "available_quantity": int(datos_producto["stock"]),
-        # Puedes agregar más campos editables aquí si quieres
     }
     resp = requests.put(
         f"https://api.mercadolibre.com/items/{id_ml}",
@@ -146,7 +168,7 @@ def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
                     break
     except Exception as e:
         print(f"[WARN] Error consultando comisión ML: {e}")
-    # ---- COSTO FIJO CHILE MANUAL ----
+
     if precio < 9990:
         costo_fijo = 700
     else:
@@ -154,14 +176,8 @@ def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
     return porcentaje, costo_fijo
 
 # ==== COSTO DE ENVÍO AUTOMÁTICO (ML CHILE) ====
-def get_shipping_cost_mlc(
-    item_price,
-    dimensions,
-    category_id,
-    listing_type_id,
-    condition="new"
-):
-    user_id = "2227856718"  # <-- Cambia por tu user_id si es necesario
+def get_shipping_cost_mlc(item_price, dimensions, category_id, listing_type_id, condition="new"):
+    user_id = "2227856718"
     access_token = get_ml_token()
     headers = {"Authorization": f"Bearer {access_token}"}
     url = (
