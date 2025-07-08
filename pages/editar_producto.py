@@ -281,10 +281,22 @@ with tabs[2]:
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
 
+# --- DETECCIÓN AUTOMÁTICA DE CATEGORÍA ML ---
+import ml_api  # si no está ya arriba
+nombre_producto = st.session_state.get("nombre_producto", "")
+ml_cat_id = st.session_state.get("ml_cat_id") or producto.get("ml_cat_id", "")
+
+if nombre_producto and not ml_cat_id:
+    try:
+        ml_cat_id = ml_api.predecir_categoria(nombre_producto)
+        st.session_state["ml_cat_id"] = ml_cat_id
+    except Exception as e:
+        st.warning(f"No se pudo detectar categoría ML automáticamente: {e}")
+
 # --- TAB 4: Stock y otros
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
-    ml_cat_id = st.session_state.get("ml_cat_id", "")
+    ml_cat_id = st.session_state.get("ml_cat_id") or producto.get("ml_cat_id", "")
     ml_attrs = {}
     campos_faltantes = []
 
@@ -359,6 +371,10 @@ with tabs[4]:
                 ml_attrs[aid] = val
 
         st.session_state["ml_attrs"] = ml_attrs
+
+        # AVISO: Si faltan obligatorios, muestra advertencia
+        if campos_faltantes:
+            st.warning(f"Debes completar los siguientes campos obligatorios antes de publicar: {', '.join(campos_faltantes)}")
 
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
