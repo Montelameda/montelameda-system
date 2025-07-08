@@ -292,15 +292,16 @@ with tabs[4]:
 
     if ml_cat_id:
         attrs = ml_api.get_all_attrs(ml_cat_id)
-        # 1. Requeridos primero, luego el resto
+
         def es_requerido(a):
-    tags = a.get("tags", {})
-    return tags.get("required") or tags.get("conditional_required") or tags.get("new_required")
+            tags = a.get("tags", {})
+            return tags.get("required") or tags.get("conditional_required") or tags.get("new_required")
 
-requeridos = [a for a in attrs if es_requerido(a)]
-no_requeridos = [a for a in attrs if not es_requerido(a)]
+        # Filtros requeridos y no requeridos
+        requeridos = [a for a in attrs if es_requerido(a)]
+        no_requeridos = [a for a in attrs if not es_requerido(a)]
 
-        # Lista negra de campos “locos” que siempre ocultas (puedes ir agregando más)
+        # Opcional: lista negra de campos que jamás usarás (ocultos hasta en avanzados)
         blacklist = [
             "Características químicas del producto", "Medicamentos", "Plataformas excluidas", "Características de las baterías",
             "Motivos de visibilidad limitada en Marketplace", "Tags descriptivos", "Información adicional requerida", "Campos de mejora de búsqueda",
@@ -310,14 +311,15 @@ no_requeridos = [a for a in attrs if not es_requerido(a)]
         def is_blacklisted(a):
             return any(bad in a.get("name", "") for bad in blacklist)
 
-        # --- REQUERIDOS arriba y resaltados ---
+        # ---- Mostrar requeridos primero y resaltados ----
         for attr in requeridos:
-            if is_blacklisted(attr): continue
+            if is_blacklisted(attr):
+                continue
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
             prev_val = st.session_state.get("ml_attrs", {}).get(aid, "")
-            # Color de fondo para required
+            # Resaltado amarillo
             st.markdown(f"<div style='background: #FFFACD; padding:4px; border-radius:5px;'><b>{nombre} (Obligatorio)</b></div>", unsafe_allow_html=True)
             # Input según tipo
             if vtype in ("number", "number_unit"):
@@ -330,17 +332,17 @@ no_requeridos = [a for a in attrs if not es_requerido(a)]
             else:
                 val = st.text_input(nombre, value=prev_val, key=f"ml_{aid}_edit")
             ml_attrs[aid] = val
-
-            # Validador de campos requeridos (si queda vacío, se agrega a la lista de faltantes)
+            # Validador: si vacío, agrégalo a la lista de faltantes
             if not val or (isinstance(val, str) and not val.strip()):
                 campos_faltantes.append(nombre)
 
-        # --- NO requeridos, solo si usuario pide “mostrar avanzados” y no están en blacklist ---
+        # --- Mostrar avanzados solo si el usuario lo pide ---
         if mostrar_avanzados:
             st.markdown("---")
             st.markdown("<b>Campos avanzados (opcional):</b>", unsafe_allow_html=True)
             for attr in no_requeridos:
-                if is_blacklisted(attr): continue
+                if is_blacklisted(attr):
+                    continue
                 aid = attr["id"]
                 nombre = attr["name"]
                 vtype = attr["value_type"]
