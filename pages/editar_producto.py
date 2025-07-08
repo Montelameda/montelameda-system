@@ -281,34 +281,29 @@ with tabs[2]:
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
 
-# --- AUTODETECCIÓN DE CATEGORÍA ML ---
-import ml_api  # Si no está ya importado arriba
-
+# --- DETECCIÓN AUTOMÁTICA DE CATEGORÍA ML ---
 nombre_producto = st.session_state.get("nombre_producto", "")
-# Si ya tienes 'producto' definido arriba, lo usa; si no, pon {}
-ml_cat_id = st.session_state.get("ml_cat_id") or (producto.get("ml_cat_id", "") if 'producto' in locals() else "")
+ml_cat_id = st.session_state.get("ml_cat_id") or producto.get("ml_cat_id", "")
 
-if nombre_producto and not ml_cat_id:
+if nombre_producto and not st.session_state.get("ml_cat_id"):
     try:
-        # Esto usa suggest_categories del ml_api, que debería devolver una lista (id, name)
-        cats = ml_api.suggest_categories(nombre_producto)
-        if cats and len(cats) > 0:
-            ml_cat_id = cats[0][0]
+        sugeridas = ml_api.suggest_categories(nombre_producto)
+        if sugeridas:
+            ml_cat_id = sugeridas[0][0]
             st.session_state["ml_cat_id"] = ml_cat_id
     except Exception as e:
         st.warning(f"No se pudo detectar categoría ML automáticamente: {e}")
 
-# --- TAB 4: MercadoLibre (atributos oficiales ML, igual a agregar) ---
+# --- TAB 5: MercadoLibre (atributos oficiales ML) ---
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
-    ml_cat_id = st.session_state.get("ml_cat_id") or (producto.get("ml_cat_id", "") if 'producto' in locals() else "")
+    ml_cat_id = st.session_state.get("ml_cat_id") or producto.get("ml_cat_id", "")
     ml_attrs = {}
     campos_faltantes = []
 
     mostrar_avanzados = st.checkbox("Mostrar campos avanzados (opcional)", value=False)
 
     if ml_cat_id:
-        # ¡IMPORTANTE! Asegúrate de tener la función 'get_all_attrs' en tu ml_api.py
         attrs = ml_api.get_all_attrs(ml_cat_id)
 
         def es_requerido(a):
@@ -326,7 +321,7 @@ with tabs[4]:
         def is_blacklisted(a):
             return any(bad in a.get("name", "") for bad in blacklist)
 
-        # Mostrar requeridos primero, resaltados
+        # --- REQUERIDOS ---
         for attr in requeridos:
             if is_blacklisted(attr):
                 continue
@@ -334,9 +329,7 @@ with tabs[4]:
             nombre = attr["name"]
             vtype = attr["value_type"]
             prev_val = st.session_state.get("ml_attrs", {}).get(aid, "")
-            # Resaltado amarillo para requeridos
             st.markdown(f"<div style='background: #FFFACD; padding:4px; border-radius:5px;'><b>{nombre} (Obligatorio)</b></div>", unsafe_allow_html=True)
-            # Input según tipo
             if vtype in ("number", "number_unit"):
                 val = st.number_input(nombre, key=f"ml_{aid}_edit", value=float(prev_val) if prev_val else 0.0)
             elif vtype == "boolean":
@@ -347,11 +340,10 @@ with tabs[4]:
             else:
                 val = st.text_input(nombre, value=prev_val, key=f"ml_{aid}_edit")
             ml_attrs[aid] = val
-            # Si vacío, agrégalo a faltantes
             if not val or (isinstance(val, str) and not val.strip()):
                 campos_faltantes.append(nombre)
 
-        # Mostrar avanzados solo si el usuario lo pide
+        # --- AVANZADOS ---
         if mostrar_avanzados:
             st.markdown("---")
             st.markdown("<b>Campos avanzados (opcional):</b>", unsafe_allow_html=True)
@@ -375,10 +367,8 @@ with tabs[4]:
 
         st.session_state["ml_attrs"] = ml_attrs
 
-        # Aviso si faltan obligatorios
         if campos_faltantes:
             st.warning(f"Debes completar los siguientes campos obligatorios antes de publicar: {', '.join(campos_faltantes)}")
-
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
 
