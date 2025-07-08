@@ -293,8 +293,12 @@ with tabs[4]:
     if ml_cat_id:
         attrs = ml_api.get_all_attrs(ml_cat_id)
         # 1. Requeridos primero, luego el resto
-        requeridos = [a for a in attrs if a.get("tags", {}).get("required")]
-        no_requeridos = [a for a in attrs if not a.get("tags", {}).get("required")]
+        def es_requerido(a):
+    tags = a.get("tags", {})
+    return tags.get("required") or tags.get("conditional_required") or tags.get("new_required")
+
+requeridos = [a for a in attrs if es_requerido(a)]
+no_requeridos = [a for a in attrs if not es_requerido(a)]
 
         # Lista negra de campos “locos” que siempre ocultas (puedes ir agregando más)
         blacklist = [
