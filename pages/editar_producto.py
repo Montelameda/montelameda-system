@@ -282,88 +282,78 @@ with tabs[2]:
             ganancia_ml_desc_neta = None
 
 # --- TAB 4: Stock y otros
-with tabs[3]:
-    st.text_input("Stock", key="stock")
-    st.text_input("Mostrar en catálogo", key="mostrar_catalogo")
-    st.text_input("ID Publicación Mercado Libre", key="id_publicacion_mercado_libre")
-    st.text_input("Link publicación 1", key="link_publicacion_1")
-    st.text_input("Link publicación 2", key="link_publicacion_2")
-    st.text_input("Link publicación 3", key="link_publicacion_3")
-    st.text_input("Link publicación 4", key="link_publicacion_4")
-    st.text_input("Cantidad vendida", key="cantidad_vendida")
-    st.text_input("Última entrada", key="ultima_entrada")
-    st.text_input("Última salida", key="ultima_salida")
-
-# TAB 5: MercadoLibre (atributos oficiales ML, igual a agregar)
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
     ml_cat_id = st.session_state.get("ml_cat_id", "")
     ml_attrs = {}
+    campos_faltantes = []
+
+    mostrar_avanzados = st.checkbox("Mostrar campos avanzados (opcional)", value=False)
 
     if ml_cat_id:
         attrs = ml_api.get_all_attrs(ml_cat_id)
-        campos = []
-        for a in attrs:
-            tags = a.get("tags", {})
-            if tags.get("required") or tags.get("conditional_required") or tags.get("new_required"):
-                campos.append((1, a))
-            elif float(a.get("relevance", 0)) >= 0.8:
-                campos.append((2, a))
-            else:
-                campos.append((3, a))
-        campos = sorted(campos, key=lambda x: x[0])
-        dimensiones_valores = {}
-        dimensiones_keys = {
-            "alto": ["ALTO", "HEIGHT", "ALTURA"],
-            "ancho": ["ANCHO", "WIDTH"],
-            "largo": ["LARGO", "LENGTH", "LONGITUD"],
-            "peso": ["PESO", "WEIGHT"]
-        }
-        for _, attr in campos:
+        # 1. Requeridos primero, luego el resto
+        requeridos = [a for a in attrs if a.get("tags", {}).get("required")]
+        no_requeridos = [a for a in attrs if not a.get("tags", {}).get("required")]
+
+        # Lista negra de campos “locos” que siempre ocultas (puedes ir agregando más)
+        blacklist = [
+            "Características químicas del producto", "Medicamentos", "Plataformas excluidas", "Características de las baterías",
+            "Motivos de visibilidad limitada en Marketplace", "Tags descriptivos", "Información adicional requerida", "Campos de mejora de búsqueda",
+            "Fuente del producto", "Alimentos y bebidas", "IVA", "Impuesto interno"
+        ]
+
+        def is_blacklisted(a):
+            return any(bad in a.get("name", "") for bad in blacklist)
+
+        # --- REQUERIDOS arriba y resaltados ---
+        for attr in requeridos:
+            if is_blacklisted(attr): continue
             aid = attr["id"]
             nombre = attr["name"]
             vtype = attr["value_type"]
             prev_val = st.session_state.get("ml_attrs", {}).get(aid, "")
-            for k, keys in dimensiones_keys.items():
-                if any(key in nombre.upper() or key in aid.upper() for key in keys):
-                    val = st.number_input(nombre, key=f"ml_{aid}_edit", value=to_float(prev_val) if prev_val else 0.0)
-                    ml_attrs[aid] = val
-                    dimensiones_valores[k] = val
-                    break
+            # Color de fondo para required
+            st.markdown(f"<div style='background: #FFFACD; padding:4px; border-radius:5px;'><b>{nombre} (Obligatorio)</b></div>", unsafe_allow_html=True)
+            # Input según tipo
+            if vtype in ("number", "number_unit"):
+                val = st.number_input(nombre, key=f"ml_{aid}_edit", value=float(prev_val) if prev_val else 0.0)
+            elif vtype == "boolean":
+                val = st.selectbox(nombre, ["Sí", "No"], index=["Sí", "No"].index(prev_val) if prev_val in ["Sí", "No"] else 0, key=f"ml_{aid}_edit")
+            elif vtype == "list":
+                opt = [v["name"] for v in attr.get("values", [])]
+                val = st.selectbox(nombre, opt if opt else ["-"], index=opt.index(prev_val) if prev_val in opt else 0, key=f"ml_{aid}_edit")
             else:
-                if aid == "GTIN":
-                    gtin_val = st.text_input("Código universal de producto (GTIN)", value=prev_val, key=f"ml_{aid}_edit")
-                    ml_attrs[aid] = gtin_val
-                elif aid == "EMPTY_GTIN_REASON":
-                    opciones = [v["name"] for v in attr.get("values", [])]
-                    ml_attrs[aid] = st.selectbox("Motivo por el que no tiene GTIN", opciones, index=opciones.index(prev_val) if prev_val in opciones else 0, key=f"ml_{aid}_edit")
+                val = st.text_input(nombre, value=prev_val, key=f"ml_{aid}_edit")
+            ml_attrs[aid] = val
+
+            # Validador de campos requeridos (si queda vacío, se agrega a la lista de faltantes)
+            if not val or (isinstance(val, str) and not val.strip()):
+                campos_faltantes.append(nombre)
+
+        # --- NO requeridos, solo si usuario pide “mostrar avanzados” y no están en blacklist ---
+        if mostrar_avanzados:
+            st.markdown("---")
+            st.markdown("<b>Campos avanzados (opcional):</b>", unsafe_allow_html=True)
+            for attr in no_requeridos:
+                if is_blacklisted(attr): continue
+                aid = attr["id"]
+                nombre = attr["name"]
+                vtype = attr["value_type"]
+                prev_val = st.session_state.get("ml_attrs", {}).get(aid, "")
+                if vtype in ("number", "number_unit"):
+                    val = st.number_input(nombre, key=f"ml_{aid}_edit", value=float(prev_val) if prev_val else 0.0)
                 elif vtype == "boolean":
-                    opt = ["Sí", "No"]
-                    ml_attrs[aid] = st.selectbox(nombre, opt, index=opt.index(prev_val) if prev_val in opt else 0, key=f"ml_{aid}_edit")
+                    val = st.selectbox(nombre, ["Sí", "No"], index=["Sí", "No"].index(prev_val) if prev_val in ["Sí", "No"] else 0, key=f"ml_{aid}_edit")
                 elif vtype == "list":
                     opt = [v["name"] for v in attr.get("values", [])]
-                    ml_attrs[aid] = st.selectbox(nombre, opt if opt else ["-"], index=opt.index(prev_val) if prev_val in opt else 0, key=f"ml_{aid}_edit")
-                elif vtype in ("number_unit", "number"):
-                    ml_attrs[aid] = st.number_input(nombre, key=f"ml_{aid}_edit", value=to_float(prev_val) if prev_val else 0.0)
+                    val = st.selectbox(nombre, opt if opt else ["-"], index=opt.index(prev_val) if prev_val in opt else 0, key=f"ml_{aid}_edit")
                 else:
-                    ml_attrs[aid] = st.text_input(nombre, value=prev_val, key=f"ml_{aid}_edit")
+                    val = st.text_input(nombre, value=prev_val, key=f"ml_{aid}_edit")
+                ml_attrs[aid] = val
+
         st.session_state["ml_attrs"] = ml_attrs
 
-        try:
-            alto = float(dimensiones_valores.get("alto") or 0)
-            ancho = float(dimensiones_valores.get("ancho") or 0)
-            largo = float(dimensiones_valores.get("largo") or 0)
-            peso = float(dimensiones_valores.get("peso") or 0)
-        except Exception:
-            alto = ancho = largo = peso = 0
-
-        if not (alto and ancho and largo and peso):
-            st.warning("Para calcular el costo de envío, asegúrate de completar alto, ancho, largo y peso en los atributos de ML.")
-            dimensiones_str = ""
-        else:
-            dimensiones_str = f"{alto}x{ancho}x{largo},{peso}"
-            st.success(f"Dimensiones para envío: {dimensiones_str}")
-        st.session_state["dimensiones_str"] = dimensiones_str
     else:
         st.info("Selecciona un nombre de producto para detectar categoría.")
 
