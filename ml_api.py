@@ -35,10 +35,6 @@ def get_ml_token():
 
 # ==== PREDECIR CATEGORÍA ====
 def predecir_categoria(nombre_producto, site="MLC"):
-    """
-    Usa el endpoint oficial de Mercado Libre para predecir la categoría más probable
-    a partir del nombre del producto.
-    """
     url = f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search"
     res = requests.post(url, json={"q": nombre_producto})
     res.raise_for_status()
@@ -49,9 +45,6 @@ def predecir_categoria(nombre_producto, site="MLC"):
 
 # ==== OBTENER ATRIBUTOS DE LA CATEGORÍA ====
 def obtener_atributos_categoria(category_id):
-    """
-    Obtiene la lista de atributos de la categoría (campos y requeridos) desde Mercado Libre.
-    """
     url = f"https://api.mercadolibre.com/categories/{category_id}/attributes"
     res = requests.get(url)
     res.raise_for_status()
@@ -84,7 +77,6 @@ def publicar_producto_ml(datos_producto):
             for k, v in datos_producto.get("ml_attrs", {}).items() if v
         ]
     }
-
     resp = requests.post(
         "https://api.mercadolibre.com/items",
         headers=headers,
@@ -115,3 +107,66 @@ def editar_producto_ml(id_ml, datos_producto):
     if not resp.ok:
         raise Exception(f"Error editando en ML: {resp.text}")
     return resp.json()
+
+# ==== COMISIÓN REAL DESDE API MERCADOLIBRE (con costo fijo MLC) ====
+def get_comision_categoria_ml(cat_id: str, precio: float, tipo_pub: str):
+    tipo_pub = tipo_pub.lower()
+    listing_type_id = "gold_special" if tipo_pub in ["clásico", "clasico"] else "gold_pro"
+    access_token = get_ml_token()
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+    porcentaje = 0.0
+    try:
+        url = (
+            f"https://api.mercadolibre.com/sites/MLC/listing_prices"
+            f"?price={int(precio)}&category_id={cat_id}"
+        )
+        resp = requests.get(url, headers=headers, timeout=6)
+        if resp.ok:
+            data = resp.json()
+            for opt in data:
+                if opt.get("listing_type_id", "") == listing_type_id:
+                    sale_details = opt.get("sale_fee_details", {})
+                    porcentaje = float(sale_details.get("percentage_fee", 0))
+                    break
+    except Exception as e:
+        print(f"[WARN] Error consultando comisión ML: {e}")
+    # ---- COSTO FIJO CHILE MANUAL ----
+    if precio < 9990:
+        costo_fijo = 700
+    else:
+        costo_fijo = 1000
+    return porcentaje, costo_fijo
+
+# ==== COSTO DE ENVÍO AUTOMÁTICO (ML CHILE) ====
+def get_shipping_cost_mlc(
+    item_price,
+    dimensions,
+    category_id,
+    listing_type_id,
+    condition="new"
+):
+    user_id = "2227856718"  # <-- Cambia por tu user_id si es necesario
+    access_token = get_ml_token()
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = (
+        f"https://api.mercadolibre.com/users/{user_id}/shipping_options/free"
+        f"?dimensions={dimensions}&verbose=true"
+        f"&item_price={int(item_price)}"
+        f"&listing_type_id={listing_type_id}"
+        f"&category_id={category_id}"
+        f"&condition={condition}"
+        f"&mode=me2"
+    )
+    resp = requests.get(url, headers=headers, timeout=10)
+    if resp.ok:
+        data = resp.json()
+        try:
+            cheapest = min(data["options"], key=lambda o: o["list_cost"])
+            costo_envio = cheapest["list_cost"]
+            return costo_envio, cheapest
+        except Exception as e:
+            print(f"Error analizando opciones de envío: {e}")
+            return 0, {}
+    else:
+        print("Error en consulta de envío:", resp.text)
+        return 0, {}
