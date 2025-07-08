@@ -148,11 +148,9 @@ with tabs[1]:
     st.text_input("Etiquetas", key="etiquetas")
     st.text_input("Foto de proveedor", key="foto_proveedor")
 
-# TAB 3: PRECIOS (idéntico lógica agregar)
+# TAB 3: PRECIOS
 with tabs[2]:
     st.markdown("### Mercado Libre - Tipo de publicación", unsafe_allow_html=True)
-
-    # --- ANTI-BOMBA para ml_listing_type ---
     opciones_ml = ["Clásico", "Premium"]
     if st.session_state.get("ml_listing_type") not in opciones_ml:
         st.session_state["ml_listing_type"] = "Clásico"
@@ -164,6 +162,7 @@ with tabs[2]:
         horizontal=True,
         label_visibility="visible"
     )
+
     # --- Detección de categoría ML ---
     nombre_producto = st.session_state.get("nombre_producto", "")
     ml_cat_id, ml_cat_name = "", ""
@@ -281,26 +280,38 @@ with tabs[2]:
             ganancia_ml_desc_estimada = None
             ganancia_ml_desc_neta = None
 
-# --- DETECCIÓN AUTOMÁTICA DE CATEGORÍA ML ---
-nombre_producto = st.session_state.get("nombre_producto", "")
-ml_cat_id = st.session_state.get("ml_cat_id") or producto.get("ml_cat_id", "")
+# --- TAB 4: Stock y otros
+with tabs[3]:
+    st.text_input("Stock", key="stock")
+    st.text_input("Mostrar en catálogo", key="mostrar_catalogo")
+    st.text_input("ID Publicación Mercado Libre", key="id_publicacion_mercado_libre")
+    st.text_input("Link publicación 1", key="link_publicacion_1")
+    st.text_input("Link publicación 2", key="link_publicacion_2")
+    st.text_input("Link publicación 3", key="link_publicacion_3")
+    st.text_input("Link publicación 4", key="link_publicacion_4")
+    st.text_input("Cantidad vendida", key="cantidad_vendida")
+    st.text_input("Última entrada", key="ultima_entrada")
+    st.text_input("Última salida", key="ultima_salida")
 
-if nombre_producto and not st.session_state.get("ml_cat_id"):
-    try:
-        sugeridas = ml_api.suggest_categories(nombre_producto)
-        if sugeridas:
-            ml_cat_id = sugeridas[0][0]
-            st.session_state["ml_cat_id"] = ml_cat_id
-    except Exception as e:
-        st.warning(f"No se pudo detectar categoría ML automáticamente: {e}")
-
-# --- TAB 5: MercadoLibre (atributos oficiales ML) ---
+# --- TAB 5: MercadoLibre (Atributos) ---
 with tabs[4]:
     st.subheader("Atributos MercadoLibre")
-    ml_cat_id = st.session_state.get("ml_cat_id") or producto.get("ml_cat_id", "")
+
+    # Detección automática de categoría
+    nombre_producto = st.session_state.get("nombre_producto", "").strip()
+    if nombre_producto and not st.session_state.get("ml_cat_id"):
+        try:
+            cats = ml_api.suggest_categories(nombre_producto)
+            if cats:
+                ml_cat_id, ml_cat_name = cats[0]
+                st.session_state["ml_cat_id"] = ml_cat_id
+                st.session_state["ml_cat_name"] = ml_cat_name
+        except Exception as e:
+            st.warning(f"No se pudo detectar la categoría ML automáticamente: {e}")
+
+    ml_cat_id = st.session_state.get("ml_cat_id", "")
     ml_attrs = {}
     campos_faltantes = []
-
     mostrar_avanzados = st.checkbox("Mostrar campos avanzados (opcional)", value=False)
 
     if ml_cat_id:
@@ -310,18 +321,21 @@ with tabs[4]:
             tags = a.get("tags", {})
             return tags.get("required") or tags.get("conditional_required") or tags.get("new_required")
 
+        # Filtros requeridos y no requeridos
         requeridos = [a for a in attrs if es_requerido(a)]
         no_requeridos = [a for a in attrs if not es_requerido(a)]
 
+        # Opcional: lista negra de campos que jamás usarás (ocultos hasta en avanzados)
         blacklist = [
             "Características químicas del producto", "Medicamentos", "Plataformas excluidas", "Características de las baterías",
             "Motivos de visibilidad limitada en Marketplace", "Tags descriptivos", "Información adicional requerida", "Campos de mejora de búsqueda",
             "Fuente del producto", "Alimentos y bebidas", "IVA", "Impuesto interno"
         ]
+
         def is_blacklisted(a):
             return any(bad in a.get("name", "") for bad in blacklist)
 
-        # --- REQUERIDOS ---
+        # Mostrar requeridos primero y resaltados
         for attr in requeridos:
             if is_blacklisted(attr):
                 continue
@@ -330,6 +344,7 @@ with tabs[4]:
             vtype = attr["value_type"]
             prev_val = st.session_state.get("ml_attrs", {}).get(aid, "")
             st.markdown(f"<div style='background: #FFFACD; padding:4px; border-radius:5px;'><b>{nombre} (Obligatorio)</b></div>", unsafe_allow_html=True)
+            # Input según tipo
             if vtype in ("number", "number_unit"):
                 val = st.number_input(nombre, key=f"ml_{aid}_edit", value=float(prev_val) if prev_val else 0.0)
             elif vtype == "boolean":
@@ -343,7 +358,7 @@ with tabs[4]:
             if not val or (isinstance(val, str) and not val.strip()):
                 campos_faltantes.append(nombre)
 
-        # --- AVANZADOS ---
+        # Mostrar avanzados solo si el usuario lo pide
         if mostrar_avanzados:
             st.markdown("---")
             st.markdown("<b>Campos avanzados (opcional):</b>", unsafe_allow_html=True)
@@ -450,13 +465,8 @@ if st.session_state.get("confirm_delete"):
             st.session_state["confirm_delete"] = False
 
 st.markdown("</div>", unsafe_allow_html=True)
-if st.button("🟡 Publicar/Actualizar en Mercado Libre"):
-    # ---- VALIDACIÓN DE CAMPOS REQUERIDOS ML ----
-    # (Esto usa la lista 'campos_faltantes' que creamos en el TAB ML arriba)
-    if 'campos_faltantes' in locals() and len(campos_faltantes) > 0:
-        st.error(f"Debes completar los siguientes campos obligatorios antes de publicar: {', '.join(campos_faltantes)}")
-        st.stop()
 
+if st.button("🟡 Publicar/Actualizar en Mercado Libre"):
     try:
         nuevos_limpios = filtrar_campos(nuevos)
         if not nuevos_limpios:
@@ -466,7 +476,6 @@ if st.button("🟡 Publicar/Actualizar en Mercado Libre"):
             if id_ml:  # Si ya tiene publicación en ML, EDITA
                 response_ml = ml_api.editar_producto_ml(id_ml, nuevos_limpios)
                 st.success(f"Actualizado en Mercado Libre. ID: {id_ml}")
-                # Opcional: actualizar enlace por si lo cambian
                 if response_ml.get("permalink"):
                     doc_ref.update({
                         "link_publicacion_1": response_ml.get("permalink"),
@@ -474,7 +483,6 @@ if st.button("🟡 Publicar/Actualizar en Mercado Libre"):
                     st.markdown(f"[Ver en Mercado Libre]({response_ml.get('permalink')})")
             else:  # Si NO tiene publicación, CREA nueva
                 response_ml = ml_api.publicar_producto_ml(nuevos_limpios)
-                # Guarda el ID y el link en la base de datos
                 doc_ref.update({
                     "id_publicacion_mercado_libre": response_ml.get("id"),
                     "link_publicacion_1": response_ml.get("permalink"),
