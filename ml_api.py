@@ -2,6 +2,7 @@ import requests
 import json
 import pathlib
 import datetime
+import urllib.parse
 
 # ==== CONFIGURA TUS CREDENCIALES ====
 ML_CLIENT_ID = "264097672348150"
@@ -33,22 +34,37 @@ def get_ml_token():
     else:
         raise RuntimeError(f"Error renovando token ML: {resp.text}")
 
-# ==== PREDECIR CATEGORÍA ====
-def predecir_categoria(nombre_producto, site="MLC"):
-    url = f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search"
-    res = requests.post(url, json={"q": nombre_producto})
-    res.raise_for_status()
-    resultados = res.json()
-    if resultados:
-        return resultados[0]["category_id"]
-    return None
+# ==== SUGERIR CATEGORÍAS POR NOMBRE (AUTODETECCIÓN) ====
+def suggest_categories(title: str, site: str = "MLC", limit: int = 5):
+    """Sugiere categorías a partir de un nombre de producto (usada por el frontend)"""
+    q = urllib.parse.quote(title.strip())
+    url = f"https://api.mercadolibre.com/sites/{site}/domain_discovery/search?limit={limit}&q={q}"
+    try:
+        data = requests.get(url, timeout=10).json()
+    except requests.exceptions.RequestException:
+        return []
+    out = []
+    for item in data:
+        cid = item["category_id"]
+        try:
+            resp = requests.get(f"https://api.mercadolibre.com/categories/{cid}", timeout=10)
+            path = resp.ok and resp.json().get("path_from_root", [])
+            name = " › ".join(n["name"] for n in path) if path else item["domain_name"]
+        except requests.exceptions.RequestException:
+            name = item["domain_name"]
+        out.append((cid, name))
+    return out
 
-# ==== OBTENER ATRIBUTOS DE LA CATEGORÍA ====
-def obtener_atributos_categoria(category_id):
-    url = f"https://api.mercadolibre.com/categories/{category_id}/attributes"
-    res = requests.get(url)
-    res.raise_for_status()
-    return res.json()
+# ==== OBTENER TODOS LOS ATRIBUTOS DE UNA CATEGORÍA ====
+def get_all_attrs(cat_id: str):
+    """Devuelve todos los atributos de una categoría ML (usada por el frontend)"""
+    url = f"https://api.mercadolibre.com/categories/{cat_id}/attributes"
+    try:
+        res = requests.get(url)
+        res.raise_for_status()
+        return res.json()
+    except Exception:
+        return []
 
 # ==== SABER SI UN ATRIBUTO ES OBLIGATORIO SEGÚN DOC ML ====
 def es_obligatorio_ml(attr):
